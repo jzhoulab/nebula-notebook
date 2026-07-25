@@ -118,20 +118,23 @@ const FileListItemComponent: React.FC<FileListItemProps> = ({
     || (isNewTabViewable && onOpenViewer)
     || (isImageFile && onOpenImageFile)) && !isEditing;
 
-  // Focus input when entering edit mode
+  // Focus + select-name-without-extension ONCE when ENTERING edit mode.
+  // Deliberately NOT keyed on editValue: with the controlled value in the
+  // deps, every keystroke re-ran this effect and re-selected the whole name,
+  // so each typed character replaced the entire filename (lab bug report).
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      // Select the name part without extension for files
-      const name = editValue;
-      const dotIndex = name.lastIndexOf('.');
-      if (dotIndex > 0 && !item.isDirectory) {
-        inputRef.current.setSelectionRange(0, dotIndex);
-      } else {
-        inputRef.current.select();
-      }
+    if (!isEditing || !inputRef.current) return;
+    const input = inputRef.current;
+    input.focus();
+    const name = input.value;
+    const dotIndex = name.lastIndexOf('.');
+    if (dotIndex > 0 && !item.isDirectory) {
+      input.setSelectionRange(0, dotIndex);
+    } else {
+      input.select();
     }
-  }, [isEditing, editValue, item.isDirectory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
   const handleClick = () => {
     if (isEditing) return;
