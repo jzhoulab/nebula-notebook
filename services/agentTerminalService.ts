@@ -454,6 +454,11 @@ class AgentTerminalService {
       '`nebula run <path> <cell-id>` (execute AND get output in one call), ' +
       '`nebula nb edit <path> <cell-id> -` (content from stdin; or --content \'…\'), `nebula nb search <path> <query>`, ' +
       '`nebula kernel status|restart|interrupt <path>`. ' +
+      // Without this, a REMOTE-mode agent (running on the user's machine) that
+      // receives a server path reaches for its own Read/cat tool, which fails:
+      // the file is on the Nebula server, not its filesystem.
+      'For NON-notebook files on the server (data, logs, scripts): `nebula fs ls|cat|download|upload <path>` — ' +
+      'a path that starts at the server root is on the SERVER; do not assume your local filesystem has it. ' +
       'Exit code 9 = edit conflict (the current content is printed — retry against it). ' +
       // Observed failure: an agent believed notebook cell source lived only
       // "inside Nebula" and tried to ferry edited source back through the
