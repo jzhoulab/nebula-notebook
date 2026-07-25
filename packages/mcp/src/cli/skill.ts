@@ -59,6 +59,7 @@ nebula nb read <path>                    # list cells: #idx id type [n] first-li
 nebula nb read <path> --cells 3-8 --outputs --full
 nebula run <path> <cell-id> --tail 40    # execute AND print output tail in one call
 nebula nb edit <path> <cell-id> -   # content from stdin (bare '-'); or --content '...' / --content-file <f>
+#   ^ writes cell source DIRECTLY. Never ferry source through the kernel (base64/chunked prints, helper cells).
 nebula nb insert <path> --index N --content '...' [--type markdown] [--id my-id]
 nebula nb delete <path> <cell-id>
 nebula nb search <path> <query> --limit 5

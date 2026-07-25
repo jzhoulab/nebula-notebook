@@ -455,6 +455,15 @@ class AgentTerminalService {
       '`nebula nb edit <path> <cell-id> -` (content from stdin; or --content \'…\'), `nebula nb search <path> <query>`, ' +
       '`nebula kernel status|restart|interrupt <path>`. ' +
       'Exit code 9 = edit conflict (the current content is printed — retry against it). ' +
+      // Observed failure: an agent believed notebook cell source lived only
+      // "inside Nebula" and tried to ferry edited source back through the
+      // KERNEL — base64-chunked through stdout, one chunk per run — looping
+      // ~20 executions without ever writing the cell. State the invariant.
+      'IMPORTANT — cell source is plain data in the notebook file: `nebula nb read` returns it and ' +
+      '`nebula nb edit` writes it directly. NEVER move cell content through the kernel (no printing/' +
+      'base64/chunked transfer of source, no helper cells that emit code): to change a cell, just call ' +
+      '`nebula nb edit`. Executing a cell repeatedly without an intervening edit makes no progress — ' +
+      'if a command did not do what you expected, re-read its --help instead of re-running it. ' +
       'For long-running cells: `nebula run` blocks until the cell finishes — launch it as a background shell task ' +
       '(`--max-wait 0` = no time limit) and the process exit is your completion signal; never poll.'
     );

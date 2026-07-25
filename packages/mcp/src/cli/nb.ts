@@ -220,6 +220,12 @@ Updates a cell's content. The write is OCC-checked: if the cell changed since
 you last read it, the command exits 9 and prints the current content so you
 can retry against it.
 
+Cell source is plain data in the notebook file: this command writes it
+directly. Never move cell content through the kernel (printing / base64 /
+chunked transfer of source, or helper cells that emit code) — just call
+nebula nb edit. Repeatedly executing a cell without an intervening edit
+makes no progress.
+
 examples:
   nebula nb edit analysis.ipynb cell-3 --content 'x = 42'
   nebula nb edit analysis.ipynb cell-3 --content-file new_cell.py
