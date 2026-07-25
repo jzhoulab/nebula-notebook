@@ -199,7 +199,7 @@ feature is hidden by design, so there's nothing to mock; don't fake it.
 |---|---|
 | **On screen** | A terminal. Two commands typed: `npx nebula-notebook` then `npx nebula-notebook-mcp setup-mcp`. Cut to the hero image. |
 | **Caption** | *"Two commands. Your notebook, and your agent."* |
-| **End card** | Logo + `github.com/jzthree/nebula-notebook`. |
+| **End card** | Logo + `github.com/jzhoulab/nebula-notebook`. |
 
 ---
 

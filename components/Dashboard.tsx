@@ -599,7 +599,7 @@ export const Dashboard: React.FC = () => {
               restart with <code className="bg-blue-100 px-1 rounded">npx nebula-notebook@latest</code>, or <code className="bg-blue-100 px-1 rounded">git pull</code> for source installs.
             </span>
             <a
-              href="https://github.com/jzthree/nebula-notebook/releases"
+              href="https://github.com/jzhoulab/nebula-notebook/releases"
               target="_blank"
               rel="noreferrer"
               className="ml-auto text-blue-600 hover:text-blue-800 underline decoration-dotted flex-shrink-0"

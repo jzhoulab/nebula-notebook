@@ -637,7 +637,7 @@ async function main(): Promise<void> {
       '',
       '   On a remote machine? From your laptop:',
       `     ssh -L ${PORT}:localhost:${PORT} ${host}    then open http://localhost:${PORT}`,
-      '   Cluster guide: https://github.com/jzthree/nebula-notebook/blob/main/docs/CLUSTER_SETUP.md',
+      '   Cluster guide: https://github.com/jzhoulab/nebula-notebook/blob/main/docs/CLUSTER_SETUP.md',
       '  ──────────────────────────────────────────────────────',
       '',
     ];

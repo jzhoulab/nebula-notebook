@@ -8,8 +8,8 @@ Nebula is an agent-native notebook — built for you and your AI to work in the 
        range requests, no attachment disposition). The 12 MB original also stays attached to
        that release as a downloadable asset. Neither is committed to the repo, so clones stay
        lean. Renderers that strip <video> (npm, some mirrors) fall back to the link inside. -->
-  <video src="https://github.com/user-attachments/assets/4a9ec9ce-9ac0-4540-b35a-27c1b97a20b1" controls muted width="940" poster="https://raw.githubusercontent.com/jzthree/nebula-notebook/main/docs/assets/nebula-hero.svg">
-    <a href="https://github.com/jzthree/nebula-notebook/releases/download/demo-assets/nebula-demo-16x9-v10-hq.mp4">Watch the 2½-minute product tour</a>
+  <video src="https://github.com/user-attachments/assets/4a9ec9ce-9ac0-4540-b35a-27c1b97a20b1" controls muted width="940" poster="https://raw.githubusercontent.com/jzhoulab/nebula-notebook/main/docs/assets/nebula-hero.svg">
+    <a href="https://github.com/jzhoulab/nebula-notebook/releases/download/demo-assets/nebula-demo-16x9-v10-hq.mp4">Watch the 2½-minute product tour</a>
   </video>
 </p>
 <p align="center"><sub>▶ <a href="https://github.com/user-attachments/assets/4a9ec9ce-9ac0-4540-b35a-27c1b97a20b1">Watch the 2½-minute tour</a> · or skim the autoplay clips below</sub></p>
@@ -29,25 +29,25 @@ Nebula is an agent-native notebook — built for you and your AI to work in the 
 **A failing cell, fixed by the agent live** — the cell errors, the agent rewrites it (presence ring on the cell it's touching) and reruns it clean:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jzthree/nebula-notebook/main/docs/assets/demo/scene-agent.gif" alt="A code cell throws a KeyError; an agent session starts, rewrites the cell live with a purple presence ring, reruns it, and the clean output appears" width="760">
+  <img src="https://raw.githubusercontent.com/jzhoulab/nebula-notebook/main/docs/assets/demo/scene-agent.gif" alt="A code cell throws a KeyError; an agent session starts, rewrites the cell live with a purple presence ring, reruns it, and the clean output appears" width="760">
 </p>
 
 **Interactive outputs, no widget plumbing** — `application/vnd.nebula.web+json` widgets respond to clicks:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jzthree/nebula-notebook/main/docs/assets/demo/scene-widget.gif" alt="A Nebula-native interactive web output: clicking Resample re-rolls the bar chart live" width="760">
+  <img src="https://raw.githubusercontent.com/jzhoulab/nebula-notebook/main/docs/assets/demo/scene-widget.gif" alt="A Nebula-native interactive web output: clicking Resample re-rolls the bar chart live" width="760">
 </p>
 
 **Time-travel through your edit history** — preview any past moment with diff highlighting, then restore:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jzthree/nebula-notebook/main/docs/assets/demo/scene-history.gif" alt="The History panel: clicking a past edit previews the notebook at that moment with an orange modified-cell highlight and a Restore option" width="760">
+  <img src="https://raw.githubusercontent.com/jzhoulab/nebula-notebook/main/docs/assets/demo/scene-history.gif" alt="The History panel: clicking a past edit previews the notebook at that moment with an orange modified-cell highlight and a Restore option" width="760">
 </p>
 
 **Find across the whole notebook** — regex search with live match counts:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/jzthree/nebula-notebook/main/docs/assets/demo/scene-search.gif" alt="Notebook-wide search: typing a query highlights every match across cells with a running match count" width="760">
+  <img src="https://raw.githubusercontent.com/jzhoulab/nebula-notebook/main/docs/assets/demo/scene-search.gif" alt="Notebook-wide search: typing a query highlights every match across cells with a running match count" width="760">
 </p>
 
 <sub>All clips captured headlessly from the running app — regenerate with <code>python scripts/demo-shoot.py all</code>.</sub>
@@ -96,7 +96,7 @@ Then open a notebook, click **Agent**, and launch Claude Code or Codex right in 
 npm releases are point-in-time snapshots — to get the latest changes, install from source:
 
 ```bash
-git clone https://github.com/jzthree/nebula-notebook.git
+git clone https://github.com/jzhoulab/nebula-notebook.git
 cd nebula-notebook
 npm install                # dependencies only (root + subpackages) — no build yet
 ```

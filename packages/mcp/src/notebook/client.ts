@@ -59,7 +59,7 @@
  * console.log('Inserted cell:', result.data.cellId);
  * ```
  *
- * @see {@link https://github.com/jzthree/nebula-notebook/blob/main/docs/AGENTIC_ARCHITECTURE.md}
+ * @see {@link https://github.com/jzhoulab/nebula-notebook/blob/main/docs/AGENTIC_ARCHITECTURE.md}
  * @module NebulaClient
  */
 
