@@ -1343,6 +1343,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
               terminalId={shellTerm.id}
               isActive={tab === 'shell'}
               onExit={handleShellExit}
+              cwd={shellTerm.cwd}
             />
           </div>
         )}
@@ -1352,6 +1353,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
               terminalId={agentTerm.id}
               isActive={tab === 'agent'}
               onExit={handleAgentExit}
+              cwd={agentTerm.cwd}
+              // Remote-agent mode: this pty is on the USER'S machine, so a
+              // Nebula file-browser path is a DIFFERENT filesystem's path.
+              runsOnUserMachine={!!remoteAgentCfg}
             />
           </div>
         )}

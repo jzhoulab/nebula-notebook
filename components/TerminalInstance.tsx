@@ -13,6 +13,7 @@ import {
   connectTerminal,
   TerminalServerMessage,
 } from '../services/terminalService';
+import { uploadFile } from '../services/fileService';
 import { agentTerminalService } from '../services/agentTerminalService';
 
 // Floor for accepting a fit: a hidden or not-yet-laid-out container yields
@@ -26,6 +27,11 @@ interface TerminalInstanceProps {
   isActive: boolean;
   onExit?: (code: number) => void;
   onInactive?: () => void;  // Called when another tab takes over
+  /** Directory this pty started in — where dropped OS files get uploaded. */
+  cwd?: string;
+  /** True when this pty runs on the USER'S machine (remote-agent mode), so a
+   *  Nebula file-browser path refers to a DIFFERENT filesystem than the shell. */
+  runsOnUserMachine?: boolean;
 }
 
 export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
@@ -33,7 +39,14 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
   isActive,
   onExit,
   onInactive,
+  cwd,
+  runsOnUserMachine = false,
 }) => {
+  // Drop state: 'path' = internal drag carrying a server path, 'files' = OS
+  // files (whose paths browsers never expose — see the teaching dialog).
+  const [dropHint, setDropHint] = useState<'path' | 'files' | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [uploading, setUploading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -368,13 +381,129 @@ export const TerminalInstance: React.FC<TerminalInstanceProps> = ({
     }
   }, [handleResize]);
 
+  /** Type text into this pty (as if pasted at the prompt). */
+  const typeIntoTerminal = useCallback((text: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'input', data: text }));
+    }
+  }, []);
+
+  /** Shell-quote a path only when it needs it (spaces / specials). */
+  const quotePath = (p: string) => (/[^\w@%+=:,./-]/.test(p) ? `'${p.replace(/'/g, `'\\''`)}'` : p);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    // preventDefault is what stops the browser from NAVIGATING to a dropped
+    // file (the "opens in a new tab" behavior) — required on dragover too.
+    e.preventDefault();
+    e.stopPropagation();
+    const types = Array.from(e.dataTransfer.types || []);
+    setDropHint(types.includes('Files') ? 'files' : 'path');
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return; // moving within
+    setDropHint(null);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDropHint(null);
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) {
+      // OS files: the browser gives us bytes, never a path. Teach + offer upload.
+      setPendingFiles(files);
+      return;
+    }
+    // Internal drag from Nebula's file browser: the real server path rides
+    // along in text/plain (FileListItem sets it).
+    const path = e.dataTransfer.getData('text/plain');
+    if (path) typeIntoTerminal(quotePath(path));
+  }, [typeIntoTerminal]);
+
+  const uploadPendingFiles = useCallback(async () => {
+    const files = pendingFiles;
+    if (!files) return;
+    setUploading(true);
+    try {
+      const dir = cwd || '.';
+      const paths: string[] = [];
+      for (const f of files) {
+        const item = await uploadFile(dir, f);
+        paths.push(item.path);
+      }
+      typeIntoTerminal(paths.map(quotePath).join(' '));
+      setPendingFiles(null);
+    } catch (err) {
+      console.error('[TerminalInstance] upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  }, [pendingFiles, cwd, typeIntoTerminal]);
+
+  const totalMb = pendingFiles ? pendingFiles.reduce((a, f) => a + f.size, 0) / (1024 * 1024) : 0;
+
   return (
-    <div className={`relative h-full w-full ${isActive ? '' : 'hidden'}`}>
+    <div
+      className={`relative h-full w-full ${isActive ? '' : 'hidden'}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div
         ref={containerRef}
         className="h-full w-full"
         style={{ padding: '4px 8px' }}
       />
+      {/* Drag-over overlay: says WHAT will happen before you let go, and which
+          machine the path belongs to (they differ in remote-agent mode). */}
+      {dropHint && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/70 pointer-events-none">
+          <div className="rounded-lg border-2 border-dashed border-slate-300 px-4 py-3 text-center text-slate-100 text-sm">
+            {dropHint === 'path' ? (
+              <>
+                <div className="font-medium">Paste server path</div>
+                {runsOnUserMachine && (
+                  <div className="text-xs text-amber-300 mt-1">
+                    This agent runs on your machine — read it with <code>nebula fs cat</code>, not <code>cat</code>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="font-medium">Drop to upload to the server</div>
+                <div className="text-xs text-slate-300 mt-1">…then its server path is pasted here</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {/* OS-file drop: explain the browser limit ONCE, offer the useful action. */}
+      {pendingFiles && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4" onClick={() => !uploading && setPendingFiles(null)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-4 text-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="font-semibold text-slate-900 mb-1">
+              {pendingFiles.length === 1 ? pendingFiles[0].name : `${pendingFiles.length} files`} — upload to the server?
+            </div>
+            <p className="text-slate-600 text-xs mb-2">
+              Browsers never reveal a dropped file's location, so Nebula can't paste its local path — it
+              receives only the contents. Uploading puts the file on the server and pastes the path it gets there
+              ({totalMb < 0.1 ? '<0.1' : totalMb.toFixed(1)} MB → <span className="font-mono">{cwd || 'terminal folder'}</span>).
+            </p>
+            <p className="text-slate-500 text-xs mb-3">
+              Want the path of a file on <em>this</em> machine instead? In Finder press
+              <span className="font-mono"> ⌥⌘C </span> to copy its path, then paste here.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setPendingFiles(null)} disabled={uploading} className="px-3 py-1.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
+              <button onClick={uploadPendingFiles} disabled={uploading} className="px-3 py-1.5 rounded bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-60">
+                {uploading ? 'Uploading…' : 'Upload & paste path'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Pill only for the INITIAL connect, when the screen is blank. During a
           reconnect the last screen content stays visible and the terminal
           already shows an inline "[Disconnected — reconnecting…]" line —
