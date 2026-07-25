@@ -80,19 +80,30 @@ Users can then install with:
 smithery install nebula-notebook-mcp
 ```
 
-### Method 4: GitHub Direct Install
+### Method 4: From a git checkout (unreleased builds)
 
-Users can install directly from GitHub:
+There is no standalone MCP repo to install from: this package lives in the
+monorepo at `packages/mcp`, and npm cannot install a subdirectory of a git
+repo. To run an unpublished build, clone and link it:
+
+```bash
+git clone https://github.com/jzhoulab/nebula-notebook.git
+cd nebula-notebook/packages/mcp
+npm install && npm run build && npm link
+```
+
+Then point the client at the linked binary:
 ```json
 {
   "mcpServers": {
     "nebula-notebook": {
-      "command": "npx",
-      "args": ["-y", "github:jzthree/nebula-notebook-mcp"]
+      "command": "nebula-mcp"
     }
   }
 }
 ```
+
+For released versions prefer Method 1 or 2.
 
 ## User Documentation
 
