@@ -1,5 +1,11 @@
 # Publish to npm — no tokens, no 2FA prompt. TWO CHANNELS:
 #
+# TWO PACKAGES ship from this repo and are published together, so a user can
+# never end up with a notebook and an MCP server from different weeks:
+#   nebula-notebook       (the app)
+#   nebula-notebook-mcp   (packages/mcp — the MCP server + `nebula` CLI)
+# nebula-autocomplete is NOT published: it is a bundledDependency of the app.
+#
 #   npm i -g nebula-notebook          → last NIGHTLY green main  (`latest`)
 #   npm i -g nebula-notebook@stable   → last formal release      (fallback)
 #
@@ -112,16 +118,33 @@ jobs:
           fi
           echo "VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
 
-      - name: Publish
+      - name: Publish the app
         if: env.SKIP != '1'
         run: npm publish --provenance --access public --tag "$NPM_TAG"
+
+      # The MCP server versions independently (it is at 0.4.0 while the app is
+      # at 0.2.x), so it takes the same PATCH bump on its own line rather than
+      # inheriting the app's number. Published in the same run so the two can
+      # never drift apart the way they did when both sat unpublished since
+      # 2026-07-06.
+      - name: Publish the MCP server
+        if: env.SKIP != '1'
+        working-directory: packages/mcp
+        run: |
+          npm install
+          if [ -n "$MCP_EXPLICIT" ]; then
+            npm version "$MCP_EXPLICIT" --no-git-tag-version --allow-same-version
+          else
+            npm version patch --no-git-tag-version
+          fi
+          npm publish --provenance --access public --tag "$NPM_TAG"
 
       - name: Commit the release bump
         if: env.SKIP != '1' && env.COMMIT_BUMP == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json
+          git add package.json packages/mcp/package.json
           git commit -m "chore(release): $VERSION [skip ci]"
           git pull --rebase --autostash origin main
           git push origin HEAD:main
