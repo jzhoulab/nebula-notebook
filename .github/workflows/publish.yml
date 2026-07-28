@@ -1,0 +1,80 @@
+# Publish to npm on a GitHub Release — no tokens, no 2FA prompt.
+#
+# Auth is npm Trusted Publishing (OIDC): npm verifies this workflow's identity
+# against the trusted publisher configured on the package page, so nothing is
+# stored as a repository secret and nobody has to authenticate per release.
+#
+# ONE-TIME SETUP (browser, once ever):
+#   npmjs.com → package `nebula-notebook` → Settings → Trusted Publisher →
+#   GitHub Actions. Organization: jzhoulab  Repository: nebula-notebook
+#   Workflow: publish.yml
+#
+# TO RELEASE (this is the whole flow):
+#   gh release create v0.3.0 --generate-notes
+# The tag decides the published version and the bump is committed back, so the
+# version on npm always identifies exactly one tree — 0.2.0 previously sat on
+# npm for 104 commits while the working tree also said 0.2.0, which made stale
+# installs impossible to spot.
+#
+# `npm publish` runs the package's own prepack (autocomplete + web + node
+# server builds), so the tarball is built from this exact commit.
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 0.3.0)"
+        required: true
+
+permissions:
+  contents: write # commit the version bump back to the default branch
+  id-token: write # OIDC token for trusted publishing + provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm is older.
+      - run: npm install -g npm@latest
+
+      - name: Set version from the release tag
+        run: |
+          RAW="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${RAW#v}"
+          echo "Publishing $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Test
+        run: npm run test:run --if-present
+
+      - name: Publish
+        run: npm publish --provenance --access public
+
+      - name: Commit the version bump
+        run: |
+          if git diff --quiet package.json; then
+            echo "Version unchanged — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore(release): ${{ github.event.release.tag_name || inputs.version }} [skip ci]"
+          git pull --rebase --autostash origin ${{ github.event.repository.default_branch }}
+          git push origin HEAD:${{ github.event.repository.default_branch }}
