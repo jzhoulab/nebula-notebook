@@ -105,3 +105,37 @@ describe('agent registry', () => {
     expect(agentRegistry.list().find(r => r.terminalId === base.terminalId)?.state).toBe('live');
   });
 });
+
+describe('busy enrichment (lab report: launch line typed into a live TUI)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    agentRegistry.remove(base.terminalId);
+    stubHasLiveChild = true;
+  });
+  afterEach(() => vi.useRealTimers());
+
+  // A HIBERNATED record whose pty still hosts a running process: the liveness
+  // machine mis-scored (or the agent was resumed by hand, never re-registered).
+  // The record must carry the process-table fact so no client types a launch
+  // command into whatever is running there.
+  it('reports busy on a hibernated record whose pty has a live child', async () => {
+    agentRegistry.register(base);
+    // teardown with no re-init → hibernated (existing machinery)
+    agentRegistry.observeOutput(base.terminalId, '\x1b[?1049l');
+    await vi.advanceTimersByTimeAsync(2100);
+    const rec = (await agentRegistry.listEnriched()).find((r) => r.terminalId === base.terminalId)!;
+    expect(rec.state).toBe('hibernated');
+    expect(rec.busy).toBe(true);
+  });
+
+  it('reports busy=false when the shell is bare, and claims nothing when unknown', async () => {
+    agentRegistry.register(base);
+    stubHasLiveChild = false;
+    let rec = (await agentRegistry.listEnriched()).find((r) => r.terminalId === base.terminalId)!;
+    expect(rec.busy).toBe(false);
+    expect(rec.idleShell).toBe(true); // live record keeps the existing field
+    stubHasLiveChild = null; // pgrep unavailable — claim nothing
+    rec = (await agentRegistry.listEnriched()).find((r) => r.terminalId === base.terminalId)!;
+    expect(rec.busy).toBeUndefined();
+  });
+});

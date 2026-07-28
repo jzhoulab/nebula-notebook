@@ -34,7 +34,8 @@ import { probeRemoteBins } from '../services/aiAutocompleteService';
 import { RemoteAgentSetupModal } from './RemoteAgentSetupModal';
 import {
   AgentRecord, agentTerminalNameFor, deleteAgent, getActiveAgentId,
-  hibernateAgent, listAgents, notebookDirOf, registerAgent, setActiveAgentId,
+  hibernateAgent, listAgents, notebookDirOf, probeTerminalBusy, registerAgent,
+  setActiveAgentId,
 } from '../services/agentRegistryService';
 
 /**
@@ -223,20 +224,46 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
     }
   }, [notebookPath]);
 
+  // Never type a launch command into a pty that already hosts a running
+  // process: records can mis-score liveness (an agent resumed BY HAND never
+  // re-registers, so its record stays 'hibernated'), and a live TUI eats the
+  // typed launch line as a chat prompt — a lab user's resumed codex politely
+  // declined to run the pasted ssh command while the bar said "didn't start".
+  // The process table is the authority; probe the pty right before typing.
+  // Busy ⇒ adopt what's running (kind from the record when known) and attach.
+  const guardedAgentLaunch = useCallback(async (kind: 'claude' | 'codex', opts: {
+    resume?: boolean; continueProject?: boolean; workdir?: string | null; mirrorSlug?: string | null; legacyRealCwd?: string | null;
+  }) => {
+    const targetId = agentTerminalService.getState().terminalId;
+    if (targetId) {
+      const busy = await probeTerminalBusy(targetId);
+      if (busy === true) {
+        const recs = await listAgents();
+        const rec = recs.find((a) => a.terminalId === targetId);
+        agentTerminalService.adoptRunningState(
+          rec?.kind === 'codex' ? 'codex' : rec?.kind === 'claude' ? 'claude' : 'manual'
+        );
+        setAgents(recs);
+        return;
+      }
+    }
+    agentTerminalService.launchAgent(kind, opts);
+  }, []);
+
   // Route a launch through the pty-resolution effect when nothing is attached
   // yet: create the pty first, then the pending launch fires on WS connect.
   const requestAgentLaunch = useCallback((kind: 'claude' | 'codex', opts: {
     resume?: boolean; continueProject?: boolean; workdir?: string; mirrorSlug?: string; legacyRealCwd?: string;
   }) => {
     if (agentTerminalService.isConnected()) {
-      agentTerminalService.launchAgent(kind, opts);
+      void guardedAgentLaunch(kind, opts);
       return;
     }
     pendingAgentLaunchRef.current = { kind, opts };
     setAgentParked(false);
     setAgentTerm(null);
     setAgentLaunchNonce((n) => n + 1);
-  }, []);
+  }, [guardedAgentLaunch]);
   const pendingAgentLaunchRef = useRef<{
     kind: 'claude' | 'codex';
     opts: { resume?: boolean; continueProject?: boolean; workdir?: string };
@@ -262,14 +289,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
       ? { resume: true, workdir: rec.workdir, mirrorSlug: rec.mirrorSlug, legacyRealCwd }
       : { continueProject: true, workdir: rec.workdir, mirrorSlug: rec.mirrorSlug, legacyRealCwd };
     if (rec.terminalId === (agentTerm?.id ?? null) && agentConnected) {
-      agentTerminalService.launchAgent(kind, opts);
+      void guardedAgentLaunch(kind, opts);
       return;
     }
     pendingAgentLaunchRef.current = { kind, opts };
     setAgentParked(false);
     setAgentLaunchNonce((n) => n + 1);
     selectAgent(rec.terminalId);
-  }, [agentTerm, agentConnected, selectAgent]);
+  }, [agentTerm, agentConnected, selectAgent, guardedAgentLaunch]);
 
   // When the agent pty connects: fire a pending continue, and adopt "running"
   // from a record the server knows is live (cross-browser attach — the
@@ -279,16 +306,19 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const pending = pendingAgentLaunchRef.current;
     if (pending) {
       pendingAgentLaunchRef.current = null;
-      agentTerminalService.launchAgent(pending.kind, pending.opts);
+      // The just-attached pty may be PRE-EXISTING with an agent already in it
+      // (the reported failure attached to a live codex) — guard, never assume.
+      void guardedAgentLaunch(pending.kind, pending.opts);
       return;
     }
     const rec = agents.find((a) => a.terminalId === agentTerm.id);
     // idleShell: the server saw a bare shell in that pty — 'live' is a pty
     // fact, not an agent fact. Adopting would freeze the tab on nothing.
-    if (rec?.state === 'live' && !rec.idleShell && (rec.kind === 'claude' || rec.kind === 'codex') && agentState.status !== 'running') {
+    const occupied = rec && ((rec.state === 'live' && !rec.idleShell) || rec.busy === true);
+    if (occupied && (rec.kind === 'claude' || rec.kind === 'codex') && agentState.status !== 'running') {
       agentTerminalService.adoptRunningState(rec.kind);
     }
-  }, [agentConnected, agentTerm, agents, agentState.status]);
+  }, [agentConnected, agentTerm, agents, agentState.status, guardedAgentLaunch]);
 
   // Only the Agent tab's pty receives injected prompts — the shell stays a
   // plain terminal.
@@ -755,7 +785,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                   {!isActive && (() => {
                     // idleShell: pty alive but nothing running in it — the
                     // agent is gone; offer continue (resume), not attach.
-                    const attachable = a.state === 'live' && !a.idleShell;
+                    const attachable = (a.state === 'live' && !a.idleShell) || a.busy === true;
                     // Reviving a your-machine agent needs the reverse tunnel —
                     // disable with the reason instead of failing after launch.
                     const tunnelBlocked = !attachable && a.location === 'remote' && reverseTunnelUp === false;
@@ -1031,7 +1061,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
             return (
               <>
-                {hereRecord && hereRecord.state === 'live' && !hereRecord.idleShell ? (
+                {hereRecord && ((hereRecord.state === 'live' && !hereRecord.idleShell) || hereRecord.busy === true) ? (
                   <button
                     onClick={() => selectAgent(hereRecord.terminalId)}
                     className="px-2 py-0.5 whitespace-nowrap flex-shrink-0 rounded bg-purple-700 text-white font-medium hover:bg-purple-800 transition-colors"

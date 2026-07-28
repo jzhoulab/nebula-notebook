@@ -179,17 +179,26 @@ class AgentRegistry {
   }
 
   /**
-   * list() plus `idleShell` on live records: true when the pty's shell has no
-   * child process — nothing is running in it, so 'live' is a pty fact, not an
-   * agent fact (a hung-then-dead ssh hop leaves exactly this). The TUI-stream
-   * liveness machine can't see that case (a dead transport emits no teardown),
-   * but the process table can. Unknown checks claim nothing.
+   * list() plus process-table facts for every record whose pty exists:
+   * - `busy`: the pty's shell has a live child — SOMETHING is running there.
+   *   Crucially reported on HIBERNATED records too: the TUI-stream liveness
+   *   machine can mis-score (an agent resumed by hand never re-registers), and
+   *   a client that trusts 'hibernated' then types a launch command straight
+   *   into the running TUI's input box (lab report: a live codex politely
+   *   declined to run the pasted ssh line). The process table is authoritative.
+   * - `idleShell` on live records: the inverse — 'live' but nothing running
+   *   (a hung-then-dead ssh hop leaves exactly this; a dead transport emits
+   *   no teardown, so only the process table can see it).
+   * Unknown checks claim nothing.
    */
-  async listEnriched(): Promise<(AgentRecord & { idleShell?: boolean })[]> {
+  async listEnriched(): Promise<(AgentRecord & { idleShell?: boolean; busy?: boolean })[]> {
     return Promise.all(this.list().map(async (r) => {
-      if (r.state !== 'live') return r;
+      if (!ptyManager.get(r.terminalId)) return r;
       const hasChild = await ptyManager.hasLiveChild(r.terminalId);
-      return hasChild === null ? r : { ...r, idleShell: !hasChild };
+      if (hasChild === null) return r;
+      return r.state === 'live'
+        ? { ...r, idleShell: !hasChild, busy: hasChild }
+        : { ...r, busy: hasChild };
     }));
   }
 

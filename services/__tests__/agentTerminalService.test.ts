@@ -6,6 +6,16 @@ import {
   shellSingleQuote,
 } from '../agentTerminalService';
 
+// Process-table probe stub: null = unknown (claims nothing) so existing tests
+// keep their behavior; individual tests flip it to true to simulate a pty
+// that actually hosts a running process.
+let busyStub: boolean | null = null;
+vi.mock('../agentRegistryService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../agentRegistryService')>()),
+  registerAgent: vi.fn(async () => {}),
+  probeTerminalBusy: vi.fn(async () => busyStub),
+}));
+
 /** Invert the launch-time login-shell wrapper ("$SHELL" -l -i -c '…') so
  *  tests keep asserting the inner command contract without escaping noise. */
 const unwrapLogin = (line: string): string => {
@@ -268,11 +278,11 @@ describe('agentTerminalService prompt injection', () => {
     expect(agentTerminalService.getResumableKind()).toBe('claude');
   });
 
-  it('recovers from a premature no-TUI verdict when the TUI shows up late (remote launches)', () => {
+  it('recovers from a premature no-TUI verdict when the TUI shows up late (remote launches)', async () => {
     agentTerminalService.registerSender('t1', () => true);
     agentTerminalService.launchAgent('claude');
     // The launch watch gives up before the slow remote chain finishes booting…
-    vi.advanceTimersByTime(60000);
+    await vi.advanceTimersByTimeAsync(60000);
     expect(agentTerminalService.getState().status).toBe('failed');
     // …then the TUI appears anyway: the agent IS up — recover, don't stay red.
     agentTerminalService.observeOutput('t1', '\x1b[?1049h\x1b[?1004h');
@@ -295,13 +305,33 @@ describe('agentTerminalService prompt injection', () => {
     expect(agentTerminalService.getState().status).toBe('running');
   });
 
-  it('fails the launch if no interface ever appears (positive check)', () => {
+  it('fails the launch if no interface ever appears (positive check)', async () => {
     agentTerminalService.registerSender('t1', () => true);
     agentTerminalService.launchAgent('claude');
-    vi.advanceTimersByTime(11000);
+    await vi.advanceTimersByTimeAsync(11000);
     const s = agentTerminalService.getState();
     expect(s.status).toBe('failed');
     expect(s.launchError).toMatch(/did not start|no interface/i);
+  });
+
+  // Lab report: a resumed codex was live in the pty, but the window declared
+  // "Agent didn't start (no interface appeared)" — the TUI's boot escapes had
+  // long scrolled out of replay, and an already-drawn TUI emits no new init.
+  // Before declaring death, ask the process table: a busy pty = something IS
+  // running — adopt it instead of failing.
+  it('adopts instead of failing when the timeout fires but the pty is busy', async () => {
+    busyStub = true;
+    try {
+      agentTerminalService.registerSender('t1', () => true);
+      agentTerminalService.launchAgent('codex');
+      await vi.advanceTimersByTimeAsync(11000);
+      const s = agentTerminalService.getState();
+      expect(s.status).toBe('running');
+      expect(s.agentKind).toBe('codex');
+      expect(s.launchError).toBeUndefined();
+    } finally {
+      busyStub = null;
+    }
   });
 
   it('fails fast on an explicit error, before the no-UI timeout', () => {

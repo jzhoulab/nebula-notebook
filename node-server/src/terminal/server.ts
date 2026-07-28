@@ -216,6 +216,16 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
     return reply.send({ ok: true });
   });
 
+  // Process-table probe: does this pty's shell have a live child? Clients MUST
+  // check this before typing a launch command into an existing pty — records
+  // can mis-score liveness (a hand-resumed agent never re-registers), and a
+  // launch line typed into a live TUI becomes a chat prompt (lab report).
+  // busy:null = unknown (pty gone / pgrep unavailable) — claim nothing.
+  fastify.get('/api/terminals/:id/busy', async (request: FastifyRequest, reply: FastifyReply) => {
+    const busy = await ptyManager.hasLiveChild((request.params as any).id);
+    return reply.send({ busy });
+  });
+
   // Get terminal info
   fastify.get('/api/terminals/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const terminal = ptyManager.getTerminalInfo((request.params as any).id);

@@ -19,7 +19,7 @@
  */
 
 import { getSettings } from './settingsService';
-import { registerAgent, setActiveAgentId } from './agentRegistryService';
+import { probeTerminalBusy, registerAgent, setActiveAgentId } from './agentRegistryService';
 import { markOnboardingStep } from './onboardingService';
 
 // Optimistic 'running' on launch; flips to 'failed' if the post-launch output
@@ -618,11 +618,26 @@ class AgentTerminalService {
     if (!terminalId) return;
     // Positive check: no TUI within the window ⇒ the agent never came up (a
     // silent failure the error-regex didn't name). More reliable than only
-    // watching for known error strings.
+    // watching for known error strings. BUT escape-inference has blind spots
+    // (a TUI that was already drawn emits no new init; boot escapes scroll out
+    // of replay), so before declaring death, ask the process table: a busy pty
+    // means something IS running — adopt it instead of failing (lab report:
+    // a live resumed codex was declared "didn't start", then fed a launch line).
     const timer = setTimeout(() => {
-      if (this.launchWatch?.phase === 'launch') {
-        this.markLaunchFailed('the agent did not start (no interface appeared)');
-      }
+      if (this.launchWatch?.phase !== 'launch') return;
+      void probeTerminalBusy(terminalId).then((busy) => {
+        const w = this.launchWatch;
+        if (w?.phase !== 'launch') return; // resolved meanwhile
+        if (busy === true) {
+          // Confirmed up by the process table (status is already 'running'
+          // optimistically) — switch to exit-watching like a seen TUI-init.
+          if (w.timer) { clearTimeout(w.timer); w.timer = null; }
+          w.phase = 'run';
+          w.raw = '';
+        } else {
+          this.markLaunchFailed('the agent did not start (no interface appeared)');
+        }
+      });
     }, LAUNCH_WATCH_MS);
     this.launchWatch = { terminalId, kind, phase: 'launch', raw: '', timer };
   }
@@ -722,7 +737,7 @@ class AgentTerminalService {
    * running-flag is per-browser, but the record knows the pty hosts a live
    * agent, so the launch bar must not render over its TUI.
    */
-  adoptRunningState(kind: 'claude' | 'codex'): void {
+  adoptRunningState(kind: AgentKind): void {
     if (this.state.status === 'running') return;
     if (this.state.terminalId) this.armExitWatch(this.state.terminalId, kind);
     this.state = { ...this.state, status: 'running', agentKind: kind, launchError: undefined };

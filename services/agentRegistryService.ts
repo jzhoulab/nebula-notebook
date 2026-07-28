@@ -25,6 +25,13 @@ export interface AgentRecord {
    * resumable, but there is no running agent to attach to.
    */
   idleShell?: boolean;
+  /**
+   * Server-observed on ANY record whose pty exists: the shell has a live
+   * child — something IS running in that pty, whatever `state` claims (a
+   * hand-resumed agent never re-registers, so its record stays 'hibernated').
+   * Typing a launch command into a busy pty feeds it to the running process.
+   */
+  busy?: boolean;
   createdAt: number;
   lastLaunchAt: number;
 }
@@ -72,6 +79,22 @@ export async function listAgents(): Promise<AgentRecord[]> {
     return Array.isArray(data.agents) ? data.agents : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Direct process-table probe of a pty: does its shell have a live child?
+ * Works without an agent record (hand-started sessions have none).
+ * null = unknown (pty gone, server unreachable) — callers must claim nothing.
+ */
+export async function probeTerminalBusy(terminalId: string): Promise<boolean | null> {
+  try {
+    const resp = await fetch(`/api/terminals/${encodeURIComponent(terminalId)}/busy`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return typeof data.busy === 'boolean' ? data.busy : null;
+  } catch {
+    return null;
   }
 }
 
