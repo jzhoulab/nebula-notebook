@@ -746,7 +746,23 @@ class AgentTerminalService {
     this.notify();
   }
 
-  markRunning(): void {
+  async markRunning(): Promise<void> {
+    // User-asserted ground truth ("my agent IS running here") — but verify
+    // against the process table first: busy === false is DEFINITIVE (the
+    // shell has no child), and injecting the bootstrap into a bare shell
+    // would EXECUTE it as shell commands. Unknown (null) trusts the user.
+    const terminalId = this.state.terminalId;
+    if (terminalId) {
+      const busy = await probeTerminalBusy(terminalId);
+      if (busy === false) {
+        this.state = {
+          ...this.state, status: 'failed', agentKind: null,
+          launchError: 'nothing is running in this terminal — start the agent below first, then mark it active',
+        };
+        this.notify();
+        return;
+      }
+    }
     markOnboardingStep('launchedAgent');
     // Manually started: assume it's up and watch for it exiting to the shell.
     if (this.state.terminalId) this.armExitWatch(this.state.terminalId, 'manual');

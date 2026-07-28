@@ -1024,6 +1024,25 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
               <> — check it’s installed{remoteAgentCfg ? ' on your machine' : ' on this server'} and on PATH, then try again.</>
             )}
           </span>
+          {/* Escape hatch AT the wrong verdict: detection is inference and can
+              mis-score — let the user assert the truth right here instead of
+              hunting for it in the more▾ menu. markRunning re-verifies against
+              the process table, so a wrong assertion can't type into a bare
+              shell. copy-prompt covers "I'll paste the context myself". */}
+          <button
+            onClick={() => { void agentTerminalService.markRunning(); }}
+            className="ml-auto flex-shrink-0 px-2 py-0.5 rounded border border-red-300 bg-white text-red-700 font-medium hover:bg-red-100 whitespace-nowrap"
+            title="The agent IS running in the terminal below — mark it active and send it the notebook context"
+          >
+            it IS running
+          </button>
+          <button
+            onClick={async () => { try { await navigator.clipboard.writeText(agentTerminalService.buildBootstrapPrompt()); } catch { /* clipboard optional */ } }}
+            className="flex-shrink-0 px-2 py-0.5 rounded text-red-600 underline decoration-dotted hover:text-red-800 whitespace-nowrap"
+            title="Copy the notebook-context prompt to paste into the agent yourself"
+          >
+            copy context
+          </button>
         </div>
       )}
 
@@ -1137,7 +1156,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                       </button>
                       <div className="border-t border-slate-100 my-1" />
                       <button
-                        onClick={() => { setShowAgentMoreMenu(false); agentTerminalService.markRunning(); }}
+                        onClick={() => { setShowAgentMoreMenu(false); void agentTerminalService.markRunning(); }}
                         className="w-full text-left px-3 py-1.5 text-slate-700 hover:bg-purple-50"
                         title="I already started an agent in this terminal myself"
                       >

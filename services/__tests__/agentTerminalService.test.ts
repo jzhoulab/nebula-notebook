@@ -342,18 +342,48 @@ describe('agentTerminalService prompt injection', () => {
     expect(agentTerminalService.getState().launchError).toMatch(/command not found/i);
   });
 
-  it('markRunning injects the bootstrap context into a manually started agent', () => {
+  it('markRunning injects the bootstrap context into a manually started agent', async () => {
     const sent: string[] = [];
     agentTerminalService.registerSender('t1', (d) => { sent.push(d); return true; });
     agentTerminalService.setServerContext('http://localhost:8000');
     agentTerminalService.setNotebookContext('/tmp/demo.ipynb');
 
-    agentTerminalService.markRunning();
+    await agentTerminalService.markRunning(); // busy unknown (null) → trust the user
     expect(sent[0]).toContain('connect_server');
     expect(sent[0]).toContain('http://localhost:8000');
     expect(sent[0]).toContain('/tmp/demo.ipynb');
     vi.advanceTimersByTime(200);
     expect(sent[1]).toBe('\r');
+  });
+
+  // "Mark as active" is user-asserted truth, but busy === false is DEFINITIVE
+  // (the shell has no child): injecting the bootstrap there would execute it
+  // as shell commands. Refuse with a reason instead.
+  it('markRunning refuses on a provably bare shell — nothing gets typed', async () => {
+    busyStub = false;
+    try {
+      const sent: string[] = [];
+      agentTerminalService.registerSender('t1', (d) => { sent.push(d); return true; });
+      await agentTerminalService.markRunning();
+      expect(sent).toHaveLength(0);
+      expect(agentTerminalService.getState().status).toBe('failed');
+      expect(agentTerminalService.getState().launchError).toMatch(/nothing is running/i);
+    } finally {
+      busyStub = null;
+    }
+  });
+
+  it('markRunning proceeds when the process table confirms something is running', async () => {
+    busyStub = true;
+    try {
+      const sent: string[] = [];
+      agentTerminalService.registerSender('t1', (d) => { sent.push(d); return true; });
+      await agentTerminalService.markRunning();
+      expect(agentTerminalService.getState().status).toBe('running');
+      expect(sent[0]).toContain('connect_server');
+    } finally {
+      busyStub = null;
+    }
   });
 
   it('composes fix prompts with notebook path, cell ref, and error excerpt', () => {
