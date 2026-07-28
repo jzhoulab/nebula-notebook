@@ -1,9 +1,19 @@
-# Publish to npm on every green commit to main — no tokens, no 2FA prompt.
+# Publish to npm — no tokens, no 2FA prompt. TWO CHANNELS:
 #
-# WHY CONTINUOUS, NOT PER-RELEASE: almost every commit here is a bug fix, so a
-# "stable release" is mostly just older bugs. Holding npm back from main
-# protected nobody — it only guaranteed that `npm i -g nebula-notebook` installed known
-# broken code. npm now tracks main, gated on the test suite.
+#   npm i -g nebula-notebook         → last release   (`latest`)
+#   npm i -g nebula-notebook@next    → newest green main
+#
+# WHY BOTH. Almost every commit here is a fix, so users must not be stuck on a
+# month-old tarball — that is what `@next` solves, automatically, with no
+# release step. But `latest` is not auto-advanced from CI either, because the
+# test suite demonstrably does not catch what live use catches: the tile-font,
+# claim-dedupe and scrollbar bugs all passed CI green and were found by
+# hand. A human saying "I have used this" is the only gate that has actually
+# worked here, and a GitHub Release is that statement. `npm publish` runs the
+# package's own prepack, so every tarball is built from that exact commit.
+#
+# Publishing a release is one command with zero authentication:
+#   gh release create v0.12.0 --generate-notes
 #
 # Auth is npm Trusted Publishing (OIDC): npm verifies this workflow's identity
 # against the trusted publisher configured on the package page, so nothing is
@@ -11,25 +21,22 @@
 #
 # ONE-TIME SETUP (browser, once ever):
 #   npmjs.com → package `nebula-notebook` → Settings → Trusted Publisher → GitHub Actions
-#   Organization/user: jzhoulab  Repository: nebula-notebook  Workflow: publish.yml
+#   Organization: jzhoulab  Repository: nebula-notebook  Workflow: publish.yml
 #
-# ROLLBACK, if a bad version escapes: repoint the tag, don't unpublish —
-#   npm dist-tag add nebula-notebook@0.3.1 latest
-# Installs follow `latest` immediately; the bad version stays resolvable for
-# anyone who pinned it, and npm forbids unpublishing after 72h anyway.
-#
-# A GitHub Release still works for deliberate minor/major bumps: the tag's
-# version is published verbatim instead of a patch bump.
+# ROLLBACK, if a bad release escapes: cut a new release from the good commit.
+# (Repointing with `npm dist-tag add` also works but needs a real token —
+# trusted publishing only authorizes `npm publish`.) npm forbids unpublishing
+# after 72h regardless, so rolling forward is the reliable path.
 name: Publish
 
 on:
-  push:
+  push: # → @next, so the newest fixes are always one command away
     branches: [main]
     paths-ignore: # docs-only commits don't earn a version
       - "**/*.md"
       - "docs/**"
       - ".github/**"
-  release:
+  release: # → latest, the human "I have used this" gate
     types: [published]
   workflow_dispatch:
     inputs:
@@ -72,24 +79,34 @@ jobs:
       - name: Test
         run: npm run test:run --if-present
 
-      - name: Choose the version
+      - name: Choose the version and channel
         run: |
           EXPLICIT="${{ github.event.release.tag_name || inputs.version }}"
           if [ -n "$EXPLICIT" ]; then
+            # A release names its version and becomes what users get by default.
             npm version "${EXPLICIT#v}" --no-git-tag-version --allow-same-version
+            echo "NPM_TAG=latest" >> "$GITHUB_ENV"
+            echo "COMMIT_BUMP=1" >> "$GITHUB_ENV"
           else
-            npm version patch --no-git-tag-version
+            # main → a prerelease under @next. Prereleases are never installed
+            # by default, so this cannot surprise anyone on `npm i -g nebula-notebook`,
+            # and package.json on main stays a clean release number.
+            BASE=$(node -p "require('./package.json').version.split('-')[0]")
+            npm version "${BASE}-next.${GITHUB_RUN_NUMBER}" --no-git-tag-version --allow-same-version
+            echo "NPM_TAG=next" >> "$GITHUB_ENV"
+            echo "COMMIT_BUMP=0" >> "$GITHUB_ENV"
           fi
           echo "VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
 
       - name: Publish
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$NPM_TAG"
 
-      - name: Commit the version bump
+      - name: Commit the release bump
+        if: env.COMMIT_BUMP == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json 2>/dev/null || git add package.json
+          git add package.json
           git commit -m "chore(release): $VERSION [skip ci]"
           git pull --rebase --autostash origin main
           git push origin HEAD:main
