@@ -3,6 +3,7 @@
  */
 
 import * as path from 'path';
+import { promises as fsp } from 'fs';
 import { execFile } from 'child_process';
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import { v4 as uuidv4 } from 'uuid';
@@ -211,8 +212,17 @@ export class PtyManager {
   async hasLiveChild(id: string): Promise<boolean | null> {
     const session = this.sessions.get(id);
     if (!session) return null;
+    const pid = session.pty.pid;
+    // Fast path (Linux): the kernel lists a process's children directly —
+    // an O(1) ~3ms read, vs pgrep's O(all processes) table scan (~50ms on a
+    // busy shared login node with 1300+ processes). Absent on macOS and on
+    // kernels without CONFIG_PROC_CHILDREN — fall back to pgrep there.
+    try {
+      const children = await fsp.readFile(`/proc/${pid}/task/${pid}/children`, 'utf-8');
+      return children.trim().length > 0;
+    } catch { /* not Linux (or file gone with the process) — pgrep decides */ }
     return new Promise((resolve) => {
-      execFile('pgrep', ['-P', String(session.pty.pid)], (error) => {
+      execFile('pgrep', ['-P', String(pid)], (error) => {
         if (!error) return resolve(true); // exit 0: at least one child
         // pgrep exits 1 for "no processes matched" — that's a definitive no.
         const code = (error as { code?: number | string }).code;
