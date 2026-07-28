@@ -1,16 +1,21 @@
 # Publish to npm — no tokens, no 2FA prompt. TWO CHANNELS:
 #
-#   npm i -g nebula-notebook         → last release   (`latest`)
-#   npm i -g nebula-notebook@next    → newest green main
+#   npm i -g nebula-notebook         → last release        (`latest`)
+#   npm i -g nebula-notebook@next    → last NIGHTLY green main
 #
-# WHY BOTH. Almost every commit here is a fix, so users must not be stuck on a
-# month-old tarball — that is what `@next` solves, automatically, with no
-# release step. But `latest` is not auto-advanced from CI either, because the
-# test suite demonstrably does not catch what live use catches: the tile-font,
-# claim-dedupe and scrollbar bugs all passed CI green and were found by
-# hand. A human saying "I have used this" is the only gate that has actually
-# worked here, and a GitHub Release is that statement. `npm publish` runs the
-# package's own prepack, so every tarball is built from that exact commit.
+# WHY BOTH, AND WHY NIGHTLY. Almost every commit here is a fix, so users must
+# not be stuck on a month-old tarball — that is what `@next` solves, with no
+# release step. But publishing per-commit is wrong in the other direction: a
+# busy day would mint dozens of permanent versions (npm forbids unpublishing
+# after 72h) for changes nobody had run yet. Once a night, from whatever main
+# is green, is the cadence that matches how the fixes are actually used.
+#
+# `latest` is not auto-advanced at all, because the test suite demonstrably
+# does not catch what live use catches: the tile-font, claim-dedupe and
+# scrollbar bugs all passed CI green and were found by hand. A human saying
+# "I have used this" is the only gate that has worked here, and a GitHub
+# Release is that statement. `npm publish` runs the package's own prepack, so
+# each tarball is built from that exact commit.
 #
 # Publishing a release is one command with zero authentication:
 #   gh release create v0.12.0 --generate-notes
@@ -30,18 +35,14 @@
 name: Publish
 
 on:
-  push: # → @next, so the newest fixes are always one command away
-    branches: [main]
-    paths-ignore: # docs-only commits don't earn a version
-      - "**/*.md"
-      - "docs/**"
-      - ".github/**"
+  schedule: # → @next, nightly at 03:00 America/Chicago (08:00 UTC)
+    - cron: "30 8 * * *"
   release: # → latest, the human "I have used this" gate
     types: [published]
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact version to publish (blank = patch bump)"
+        description: "Exact version to publish as latest (blank = nightly @next)"
         required: false
 
 permissions:
@@ -55,8 +56,6 @@ concurrency: # a burst of pushes publishes once, from the newest commit
 jobs:
   publish:
     runs-on: ubuntu-latest
-    # The bot's own bump commit carries [skip ci], so this can't self-trigger.
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,15 +70,30 @@ jobs:
       # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm is older.
       - run: npm install -g npm@latest
 
+      # Nothing new since the last nightly? Then there is nothing to publish —
+      # quiet days should not mint versions. npm records the commit each
+      # tarball was built from, which makes this exact rather than date math.
+      - name: Skip if main has not moved
+        if: github.event_name == 'schedule'
+        run: |
+          PUBLISHED=$(npm view nebula-notebook@next gitHead 2>/dev/null || echo "")
+          if [ -n "$PUBLISHED" ] && [ "$PUBLISHED" = "$GITHUB_SHA" ]; then
+            echo "main is unchanged since the last nightly ($PUBLISHED) — nothing to publish."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+
       - name: Install dependencies
+        if: env.SKIP != '1'
         run: npm ci || npm install
 
-      # Gate: main publishes only if it is green. This is the whole safety
-      # story for continuous publishing, so it runs BEFORE the version bump.
+      # Gate: the nightly ships only if main is green. This is the whole
+      # safety story for @next, so it runs BEFORE the version is chosen.
       - name: Test
+        if: env.SKIP != '1'
         run: npm run test:run --if-present
 
       - name: Choose the version and channel
+        if: env.SKIP != '1'
         run: |
           EXPLICIT="${{ github.event.release.tag_name || inputs.version }}"
           if [ -n "$EXPLICIT" ]; then
@@ -88,21 +102,23 @@ jobs:
             echo "NPM_TAG=latest" >> "$GITHUB_ENV"
             echo "COMMIT_BUMP=1" >> "$GITHUB_ENV"
           else
-            # main → a prerelease under @next. Prereleases are never installed
-            # by default, so this cannot surprise anyone on `npm i -g nebula-notebook`,
-            # and package.json on main stays a clean release number.
+            # Nightly → a prerelease under @next, dated so it reads as what it
+            # is. Prereleases are never installed by default, so this cannot
+            # surprise anyone on `npm i -g nebula-notebook`, and package.json on main
+            # stays a clean release number.
             BASE=$(node -p "require('./package.json').version.split('-')[0]")
-            npm version "${BASE}-next.${GITHUB_RUN_NUMBER}" --no-git-tag-version --allow-same-version
+            npm version "${BASE}-next.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}" --no-git-tag-version --allow-same-version
             echo "NPM_TAG=next" >> "$GITHUB_ENV"
             echo "COMMIT_BUMP=0" >> "$GITHUB_ENV"
           fi
           echo "VERSION=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
 
       - name: Publish
+        if: env.SKIP != '1'
         run: npm publish --provenance --access public --tag "$NPM_TAG"
 
       - name: Commit the release bump
-        if: env.COMMIT_BUMP == '1'
+        if: env.SKIP != '1' && env.COMMIT_BUMP == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
