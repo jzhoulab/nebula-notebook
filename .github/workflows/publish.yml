@@ -71,8 +71,12 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm >= 11.5.1; the runner's bundled npm is older.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm >= 11.5.1 and the runner ships older.
+      # Pinned to the 11.x line rather than @latest: npm 12 requires Node
+      # >= 22.22, so `npm@latest` breaks the moment npm raises its engine
+      # floor above whatever Node this workflow pins — which is exactly how
+      # the first nebula-notebook publish failed.
+      - run: npm install -g npm@^11
 
       # Nothing new since the last nightly? Then there is nothing to publish —
       # quiet days should not mint versions. npm records the commit each
