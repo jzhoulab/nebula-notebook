@@ -109,36 +109,75 @@ export const ensureRemoteAgentPort = (): number => {
   return port;
 };
 
+/** Installation-wide remote-agent config, as the server reports it. */
+export interface RemoteAgentServerConfig {
+  port?: number;
+  user?: string;
+  localSshPort?: number;
+  jumpHost?: string;
+  localUrl?: string;
+}
+
 /**
- * Converge on the server's installation-wide reverse-channel port
- * (~/.nebula/remote-agent.json). A locally stored port is offered as a
- * claim: the first browser to sync after upgrade keeps the port its user
- * already built a tunnel for; afterwards the server value wins everywhere.
- * Offline/unreachable → keep the local value. Returns the effective port.
+ * Converge on the server's installation-wide remote-agent config
+ * (~/.nebula/remote-agent.json) and mirror it into settings. Local values
+ * are offered as claims: the FIRST browser to sync after upgrade donates
+ * the setup it already had working (so no re-tunnel, no re-prompt), and
+ * afterwards the server's copy wins everywhere. A field the server doesn't
+ * know never erases the local one. Offline → keep local, return null.
  */
-export const syncRemoteAgentPort = async (): Promise<number | null> => {
-  const local = getSettings().remoteAgentPort;
+export const syncRemoteAgentConfig = async (): Promise<RemoteAgentServerConfig | null> => {
+  const s = getSettings();
+  const claims: Record<string, string> = {};
+  if (s.remoteAgentPort && Number.isInteger(s.remoteAgentPort)) claims.claimPort = String(s.remoteAgentPort);
+  if (s.remoteAgentUser?.trim()) claims.claimUser = s.remoteAgentUser.trim();
+  if (s.remoteAgentLocalSshPort) claims.claimSshPort = String(s.remoteAgentLocalSshPort);
+  if (s.remoteAgentJumpHost?.trim()) claims.claimJump = s.remoteAgentJumpHost.trim();
+  if (s.remoteAgentLocalUrl?.trim()) claims.claimUrl = s.remoteAgentLocalUrl.trim();
+  const q = Object.keys(claims).length ? `?${new URLSearchParams(claims)}` : '';
   try {
-    const q = local && Number.isInteger(local) ? `?claim=${local}` : '';
-    const resp = await fetch(`/api/terminals/agent-port${q}`);
-    if (!resp.ok) return local ?? null;
-    const data = await resp.json();
-    if (!Number.isInteger(data.port)) return local ?? null;
-    if (data.port !== local) saveSettings({ remoteAgentPort: data.port });
-    return data.port;
+    const resp = await fetch(`/api/terminals/agent-config${q}`);
+    if (!resp.ok) return null;
+    const cfg = (await resp.json()) as RemoteAgentServerConfig;
+    const next: Partial<NebulaSettings> = {};
+    if (Number.isInteger(cfg.port) && cfg.port !== s.remoteAgentPort) next.remoteAgentPort = cfg.port;
+    if (cfg.user && cfg.user !== s.remoteAgentUser) next.remoteAgentUser = cfg.user;
+    if (cfg.localSshPort && cfg.localSshPort !== s.remoteAgentLocalSshPort) next.remoteAgentLocalSshPort = cfg.localSshPort;
+    if (cfg.jumpHost && cfg.jumpHost !== s.remoteAgentJumpHost) next.remoteAgentJumpHost = cfg.jumpHost;
+    if (cfg.localUrl && cfg.localUrl !== s.remoteAgentLocalUrl) next.remoteAgentLocalUrl = cfg.localUrl;
+    if (Object.keys(next).length) saveSettings(next);
+    return cfg;
   } catch {
-    return local ?? null;
+    return null;
   }
 };
 
-/** Explicit port override — persists locally AND server-side (all browsers follow). */
-export const setRemoteAgentPort = async (port: number): Promise<void> => {
-  saveSettings({ remoteAgentPort: port });
+/**
+ * Explicit override — persists locally AND server-side so every other
+ * browser of this installation follows on its next sync.
+ */
+export const pushRemoteAgentConfig = async (fields: RemoteAgentServerConfig): Promise<void> => {
+  const local: Partial<NebulaSettings> = {};
+  if (fields.port !== undefined) local.remoteAgentPort = fields.port;
+  if (fields.user !== undefined) local.remoteAgentUser = fields.user;
+  if (fields.localSshPort !== undefined) local.remoteAgentLocalSshPort = fields.localSshPort;
+  if (fields.jumpHost !== undefined) local.remoteAgentJumpHost = fields.jumpHost;
+  if (fields.localUrl !== undefined) local.remoteAgentLocalUrl = fields.localUrl;
+  if (Object.keys(local).length) saveSettings(local);
   try {
-    await fetch('/api/terminals/agent-port', {
+    await fetch('/api/terminals/agent-config', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ port }),
+      body: JSON.stringify(fields),
     });
   } catch { /* offline — the next sync's claim carries it to the server */ }
 };
+
+/**
+ * Is remote-agent mode configured enough to run? The username is the one
+ * thing Nebula cannot discover or guess (it composes the ssh hop back), so
+ * it alone decides whether the setup dialog must be shown. Call AFTER
+ * syncRemoteAgentConfig() so a browser that simply hasn't synced yet
+ * doesn't re-prompt for setup another browser already completed.
+ */
+export const remoteAgentSetupComplete = (): boolean => !!getSettings().remoteAgentUser?.trim();

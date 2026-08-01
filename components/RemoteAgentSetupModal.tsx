@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Laptop } from 'lucide-react';
 import { ModalShell } from './ModalShell';
-import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentPort, setRemoteAgentPort, NebulaSettings } from '../services/settingsService';
+import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentConfig, pushRemoteAgentConfig, NebulaSettings } from '../services/settingsService';
 import { getTerminalServerInfo, checkReverseTunnel } from '../services/terminalService';
 
 interface Props {
@@ -36,7 +36,7 @@ export const RemoteAgentSetupModal: React.FC<Props> = ({ onClose }) => {
   // (claiming our local one if the server has none yet) so the commands shown
   // here match what every other browser of this user will probe and use.
   useEffect(() => {
-    void syncRemoteAgentPort().then(() => setSettings(getSettings()));
+    void syncRemoteAgentConfig().then(() => setSettings(getSettings()));
   }, []);
   const [serverInfo, setServerInfo] = useState<{ hostname: string | null; port: number | null }>({ hostname: null, port: null });
   const [tunnel, setTunnel] = useState<{ up: boolean; ssh: boolean | null } | null>(null);
@@ -46,6 +46,17 @@ export const RemoteAgentSetupModal: React.FC<Props> = ({ onClose }) => {
   const persist = (next: Partial<NebulaSettings>) => {
     saveSettings(next);
     setSettings(getSettings());
+    // Anything typed here describes the INSTALLATION (how to reach the user's
+    // machine), so it belongs on the server: that is what lets a second
+    // browser — or merely the second origin — inherit a finished setup
+    // instead of showing this dialog again.
+    void pushRemoteAgentConfig({
+      user: next.remoteAgentUser,
+      localSshPort: next.remoteAgentLocalSshPort,
+      jumpHost: next.remoteAgentJumpHost,
+      localUrl: next.remoteAgentLocalUrl,
+      port: next.remoteAgentPort,
+    });
   };
 
   useEffect(() => {
@@ -178,7 +189,7 @@ export const RemoteAgentSetupModal: React.FC<Props> = ({ onClose }) => {
                     const p = 20000 + Math.floor(Math.random() * 40000);
                     // Server-side too: the override must reach every browser,
                     // or the others keep probing the old port forever.
-                    void setRemoteAgentPort(p).then(() => setSettings(getSettings()));
+                    void pushRemoteAgentConfig({ port: p }).then(() => setSettings(getSettings()));
                   }}
                   className="text-xs text-purple-600 hover:text-purple-800 underline decoration-dotted"
                   title="Pick a new random port (if this one collides with another user on the server)"

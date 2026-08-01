@@ -11,7 +11,7 @@ import * as path from 'path';
 import { ptyManager } from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import { terminalBindings, SHARED_SHELL_NAME, TerminalBindingScope } from './binding-store';
-import { remoteAgentPort } from './remote-agent-port';
+import { remoteAgentConfig } from './remote-agent-config';
 import { fsService } from '../fs/fs-service';
 import {
   CreateTerminalRequest,
@@ -51,22 +51,32 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
     });
   });
 
-  // Reverse-channel port: ONE per installation, owned by the server so every
-  // browser converges on the same number and the user's standing tunnel keeps
-  // working (per-browser random ports orphaned it — lab report). `claim` lets
-  // the first browser to sync keep the port its tunnel already forwards.
-  fastify.get('/api/terminals/agent-port', async (request: FastifyRequest, reply: FastifyReply) => {
-    const raw = (request.query as { claim?: string }).claim;
-    const claim = raw === undefined ? undefined : Number(raw);
-    return reply.send({ port: remoteAgentPort.ensure(claim) });
+  // Remote-agent config: ONE per installation, owned by the server, so every
+  // browser converges on the same reverse port (per-browser random ports
+  // orphaned the user's standing tunnel) and inherits a completed setup
+  // instead of re-prompting for it (both lab reports). The claim* params let
+  // the FIRST browser to sync donate what it already had working; stored
+  // truth always wins afterwards.
+  fastify.get('/api/terminals/agent-config', async (request: FastifyRequest, reply: FastifyReply) => {
+    const q = request.query as Record<string, string | undefined>;
+    const num = (v: string | undefined) => (v === undefined ? undefined : Number(v));
+    return reply.send(remoteAgentConfig.claim({
+      port: num(q.claimPort),
+      user: q.claimUser,
+      localSshPort: num(q.claimSshPort),
+      jumpHost: q.claimJump,
+      localUrl: q.claimUrl,
+    }));
   });
 
-  fastify.put('/api/terminals/agent-port', async (request: FastifyRequest, reply: FastifyReply) => {
-    const port = Number((request.body as { port?: unknown } | null)?.port);
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-      return reply.status(400).send({ error: 'port must be an integer in 1024-65535' });
-    }
-    return reply.send({ port: remoteAgentPort.set(port) });
+  fastify.put('/api/terminals/agent-config', async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = (request.body as Record<string, unknown> | null) || {};
+    // Only fields actually present are touched (undefined keeps, null erases).
+    const pick = (k: string) => (k in body ? (body[k] as never) : undefined);
+    return reply.send(remoteAgentConfig.patch({
+      port: pick('port'), user: pick('user'), localSshPort: pick('localSshPort'),
+      jumpHost: pick('jumpHost'), localUrl: pick('localUrl'),
+    }));
   });
 
   // Probe a loopback port on THIS host — used by remote-agent mode to detect

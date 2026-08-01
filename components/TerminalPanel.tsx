@@ -28,7 +28,7 @@ import {
 } from '../services/terminalService';
 import { agentTerminalService } from '../services/agentTerminalService';
 import { useNotification } from './NotificationSystem';
-import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentPort } from '../services/settingsService';
+import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentConfig, remoteAgentSetupComplete } from '../services/settingsService';
 import { fetchEnvironment, serverIsRemote } from '../services/environmentService';
 import { probeRemoteBins } from '../services/aiAutocompleteService';
 import { RemoteAgentSetupModal } from './RemoteAgentSetupModal';
@@ -373,8 +373,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   // forever (lab report). A change recomputes remoteAgentCfg via the nonce.
   useEffect(() => {
     if (!isOpen || tab !== 'agent' || !serverRemote) return;
-    void syncRemoteAgentPort().then((port) => {
-      if (port !== null && port !== remoteAgentPort) setSettingsNonce((n) => n + 1);
+    void syncRemoteAgentConfig().then((cfg) => {
+      if (cfg && cfg.port !== undefined && cfg.port !== remoteAgentPort) setSettingsNonce((n) => n + 1);
     });
   }, [isOpen, tab, serverRemote, remoteAgentPort]);
   useEffect(() => {
@@ -1302,12 +1302,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                     // autocomplete: agentRunsOn is what the autocomplete transport
                     // reads (see aiAutocompleteService).
                     saveSettings({ remoteAgentEnabled: true, remoteAgentPort: port, agentRunsOn: 'mine' });
-                    void syncRemoteAgentPort(); // claim/adopt the installation port
-
-                    // Missing username → the mode can't compose the ssh-back line;
-                    // open the setup dialog to finish configuration.
-                    if (!s.remoteAgentUser?.trim()) setShowRemoteSetup(true);
-                    else probeRemoteBins(); // discover the user's claude/codex for autocomplete
+                    // Adopt the installation config FIRST, then decide: this
+                    // browser may simply never have seen a setup that is done
+                    // and working (settings are per-origin, so even the same
+                    // Nebula on :3000 vs :8867 starts blank). Only a genuinely
+                    // unconfigured installation gets the dialog.
+                    void syncRemoteAgentConfig().then(() => {
+                      setSettingsNonce(n => n + 1);
+                      if (!remoteAgentSetupComplete()) setShowRemoteSetup(true);
+                      else probeRemoteBins(); // discover the user's claude/codex for autocomplete
+                    });
                   } else {
                     saveSettings({ remoteAgentEnabled: false, agentRunsOn: 'server' });
                   }

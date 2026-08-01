@@ -4,7 +4,8 @@ import {
   getSettings,
   saveSettings,
   ensureRemoteAgentPort,
-  syncRemoteAgentPort,
+  syncRemoteAgentConfig,
+  remoteAgentSetupComplete,
   NebulaSettings,
   IndentationPreference,
 } from '../services/settingsService';
@@ -493,13 +494,17 @@ const SettingsModalContent: React.FC<Props> = ({ isOpen, onClose, onRefresh, isL
                 if (where === 'mine') {
                   const port = s.remoteAgentPort ?? ensureRemoteAgentPort();
                   persistSettings({ agentRunsOn: 'mine', remoteAgentEnabled: true, remoteAgentPort: port });
-                  // Converge on the installation-wide port (claiming ours if
-                  // the server has none) so all browsers probe the same one.
-                  void syncRemoteAgentPort().then(() => notifySettingsChanged());
                   notifySettingsChanged();
-                  if (!s.remoteAgentUser?.trim()) setShowRemoteSetup(true);
-                  else probeRemoteBins().then((r) => {
-                    if (r && !r.reachable) toast('Could not reach your machine over the tunnel — connect it, then run diagnostics.', 'warning');
+                  // Adopt the installation config BEFORE deciding whether setup
+                  // is needed: this browser may just never have seen a setup
+                  // that is done and working (settings are per-origin).
+                  void syncRemoteAgentConfig().then(() => {
+                    setSettings(getSettings());
+                    notifySettingsChanged();
+                    if (!remoteAgentSetupComplete()) setShowRemoteSetup(true);
+                    else probeRemoteBins().then((r) => {
+                      if (r && !r.reachable) toast('Could not reach your machine over the tunnel — connect it, then run diagnostics.', 'warning');
+                    });
                   });
                 } else {
                   persistSettings({ agentRunsOn: 'server', remoteAgentEnabled: false });
