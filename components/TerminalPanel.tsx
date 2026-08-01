@@ -28,7 +28,7 @@ import {
 } from '../services/terminalService';
 import { agentTerminalService } from '../services/agentTerminalService';
 import { useNotification } from './NotificationSystem';
-import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentConfig, remoteAgentSetupComplete } from '../services/settingsService';
+import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentConfig, remoteAgentSetupComplete, discoverRemoteAgentUser } from '../services/settingsService';
 import { fetchEnvironment, serverIsRemote } from '../services/environmentService';
 import { probeRemoteBins } from '../services/aiAutocompleteService';
 import { RemoteAgentSetupModal } from './RemoteAgentSetupModal';
@@ -126,6 +126,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   useEffect(() => { fetchEnvironment().then((env) => setServerRemote(serverIsRemote(env))); }, []);
   // Remote-agent setup dialog (connection details for the reverse channel).
   const [showRemoteSetup, setShowRemoteSetup] = useState(false);
+  // Remote mode the user CHOSE, independent of whether it's complete enough to
+  // use — the gap between the two is what the incomplete-setup banner explains.
+  const [findingUser, setFindingUser] = useState(false);
+  const [userLookupError, setUserLookupError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   // Delayed visibility for the "opening terminal" overlay: after a refresh the
   // panel almost always REATTACHES to the surviving pty (not create a new one),
@@ -366,6 +370,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   // Gate remote-agent mode on the server actually being remote: a local install
   // never shows tunnel UI or the "my machine" option (it IS your machine).
   const remoteAgentCfg = serverRemote ? agentTerminalService.getRemoteAgentConfig() : null;
+  // What the user PICKED, vs remoteAgentCfg which is what's actually usable.
+  const remoteModeChosen = !!(getSettings().remoteAgentEnabled || getSettings().agentRunsOn === 'mine');
   const remoteAgentPort = remoteAgentCfg?.port ?? null;
   // Converge on the server's installation-wide reverse port BEFORE probing:
   // a browser whose locally minted port diverges from the one the user's
@@ -927,6 +933,52 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         </div>
       )}
 
+      {/* Remote-agent mode chosen but INCOMPLETE. Without a username
+          getRemoteAgentConfig() returns null, so every banner below is
+          suppressed and the panel silently behaves as "this server" — the
+          user's choice appears to do nothing and nothing says why (lab
+          report). Name the one missing piece, and offer to find it. */}
+      {tab === 'agent' && serverRemote && remoteModeChosen && !remoteAgentCfg && (
+        <div className="flex items-center gap-2 px-2 py-1 bg-amber-50 border-b border-amber-200 flex-shrink-0 text-xs">
+          <Bot className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+          <span className="text-amber-800 flex-shrink-0">
+            <span className="font-medium">Agent is set to run on your machine</span>
+            {' '}— Nebula still needs your username there to ssh back.
+          </span>
+          <button
+            onClick={async () => {
+              setFindingUser(true);
+              const { user, reason } = await discoverRemoteAgentUser();
+              setFindingUser(false);
+              setSettingsNonce((n) => n + 1);
+              if (user) probeRemoteBins();
+              else setUserLookupError(reason ?? 'could not reach your machine over the tunnel');
+            }}
+            disabled={findingUser}
+            className="px-1.5 py-0.5 rounded bg-amber-600 text-white font-medium hover:bg-amber-700 disabled:opacity-50 flex-shrink-0"
+            title="Ask your machine over the reverse tunnel (runs `whoami` there)"
+          >
+            {findingUser ? 'looking…' : 'find it for me'}
+          </button>
+          <button
+            onClick={() => setShowRemoteSetup(true)}
+            className="text-amber-700 hover:text-amber-900 underline decoration-dotted flex-shrink-0"
+          >
+            set up…
+          </button>
+          {userLookupError && (
+            <span className="text-amber-700 truncate" title={userLookupError}>{userLookupError}</span>
+          )}
+          <button
+            onClick={() => { saveSettings({ remoteAgentEnabled: false, agentRunsOn: 'server' }); setSettingsNonce((n) => n + 1); }}
+            className="ml-auto text-amber-600 hover:text-amber-800 underline decoration-dotted flex-shrink-0"
+            title="Run the agent on this server instead"
+          >
+            use this server
+          </button>
+        </div>
+      )}
+
       {/* Remote-agent tunnel guide — reverse channel not connected yet */}
       {tab === 'agent' && (agentTerm || agentParked) && agentState.status !== 'running' && remoteAgentCfg && reverseTunnelUp === false && (
         <div className="flex items-center gap-2 px-2 py-1 bg-amber-50 border-b border-amber-200 flex-shrink-0 text-xs">
@@ -1307,10 +1359,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                     // and working (settings are per-origin, so even the same
                     // Nebula on :3000 vs :8867 starts blank). Only a genuinely
                     // unconfigured installation gets the dialog.
-                    void syncRemoteAgentConfig().then(() => {
+                    void syncRemoteAgentConfig().then(async () => {
                       setSettingsNonce(n => n + 1);
-                      if (!remoteAgentSetupComplete()) setShowRemoteSetup(true);
-                      else probeRemoteBins(); // discover the user's claude/codex for autocomplete
+                      if (remoteAgentSetupComplete()) {
+                        probeRemoteBins(); // discover the user's claude/codex for autocomplete
+                        return;
+                      }
+                      // Don't demand the username — look it up over the tunnel
+                      // (`whoami`). Only open setup if that genuinely can't answer.
+                      const { user } = await discoverRemoteAgentUser();
+                      setSettingsNonce(n => n + 1);
+                      if (user) probeRemoteBins();
+                      else setShowRemoteSetup(true);
                     });
                   } else {
                     saveSettings({ remoteAgentEnabled: false, agentRunsOn: 'server' });

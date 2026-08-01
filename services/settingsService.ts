@@ -181,3 +181,28 @@ export const pushRemoteAgentConfig = async (fields: RemoteAgentServerConfig): Pr
  * doesn't re-prompt for setup another browser already completed.
  */
 export const remoteAgentSetupComplete = (): boolean => !!getSettings().remoteAgentUser?.trim();
+
+/**
+ * Ask the server to find the username on the user's machine over the reverse
+ * tunnel (`whoami`) instead of demanding it in a form. Returns the login on
+ * success and stores it; null means the tunnel didn't answer — which is a
+ * real, reportable state, not a silent dead end.
+ */
+export const discoverRemoteAgentUser = async (): Promise<{ user: string | null; reason?: string }> => {
+  try {
+    const resp = await fetch('/api/terminals/agent-config/discover-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hint: getSettings().remoteAgentUser?.trim() || undefined }),
+    });
+    if (!resp.ok) return { user: null };
+    const data = await resp.json();
+    if (typeof data.user === 'string' && data.user) {
+      saveSettings({ remoteAgentUser: data.user });
+      return { user: data.user };
+    }
+    return { user: null, reason: typeof data.reason === 'string' ? data.reason : undefined };
+  } catch {
+    return { user: null };
+  }
+};

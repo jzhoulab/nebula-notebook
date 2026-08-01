@@ -48,6 +48,8 @@ const MAX_ERROR_EXCERPT_CHARS = 280;
 // (<1s); the window is generous to tolerate a slow reverse-ssh hop before we
 // declare the launch dead.
 const LAUNCH_WATCH_MS = 10000;
+/** Window in which an identical launch line for the same pty is a duplicate. */
+const LAUNCH_DEDUPE_MS = 5000;
 // A full-screen TUI (Claude, Codex) sets these private terminal modes when it
 // starts and resets them when it exits back to the shell. Verified by capturing
 // both agents' raw pty output AND the zsh prompt's: focus-events (?1004) is set
@@ -143,6 +145,8 @@ class AgentTerminalService {
   // Kind of the most recent launch — used when a late TUI proves a launch we
   // had already written off actually succeeded.
   private lastLaunchKind: 'claude' | 'codex' | null = null;
+  /** Last launch line actually typed, for duplicate suppression. */
+  private lastLaunchSent: { terminalId: string | null; line: string; at: number } | null = null;
   private serverBaseUrl: string | null = null;
   private repoRoot: string | null = null;
   // Output watcher over the agent terminal. phase 'launch' = confirming the TUI
@@ -187,6 +191,9 @@ class AgentTerminalService {
   /** Designate which terminal is the agent terminal (the notebook panel's). */
   setAgentTerminal(terminalId: string | null): void {
     if (this.state.terminalId === terminalId) return;
+    // A different pty is a different launch context — never let the previous
+    // terminal's line suppress a launch here.
+    this.lastLaunchSent = null;
     // Switching notebooks (or restoring across a refresh): the named pty survives
     // and an agent launched earlier is still running in it. Detach the old
     // watch; re-arm exit detection on the newly-current terminal if it's running.
@@ -302,6 +309,48 @@ class AgentTerminalService {
     const sshPort = s.remoteAgentLocalSshPort ?? 22;
     return `burrow add --name nebula-agent --host ${serverHost || '<server-host>'}${jump} ` +
       `--local ${localPort}:localhost:${serverPort ?? 3000} --remote ${s.remoteAgentPort ?? '<port>'}:localhost:${sshPort}`;
+  }
+
+  /**
+   * The whole remote-agent setup, written for an AGENT running on the user's
+   * own machine to carry out. Most people would rather hand this to their
+   * agent than follow a page of instructions — so the text carries THIS
+   * installation's real values (host, ports, jump host), both ways to build
+   * the tunnel, the step everyone forgets (Remote Login), and how to check
+   * the result. It never invents a hostname: unknown values stay as visible
+   * placeholders the user can fill in.
+   */
+  buildRemoteSetupAgentPrompt(serverHost: string | null, serverPort: number | null): string {
+    const s = getSettings();
+    const host = serverHost || '<server-host>';
+    const port = s.remoteAgentPort ?? '<port>';
+    const sshPort = s.remoteAgentLocalSshPort ?? 22;
+    let localPort = '3000';
+    try { localPort = new URL(s.remoteAgentLocalUrl || 'http://localhost:3000').port || '80'; } catch { /* keep default */ }
+    const jumpNote = s.remoteAgentJumpHost?.trim()
+      ? `\n  The server is reachable only through the jump host \`${s.remoteAgentJumpHost.trim()}\` (already in the commands below).`
+      : `\n  If \`${host}\` is not reachable directly from my machine, add a jump host (\`-J <bastion>\` / \`--jump <bastion>\`) and tell me what you used.`;
+    return [
+      'Please set up "Nebula agent on my machine" for me. I am on macOS; you are running ON my machine.',
+      `Nebula runs on the server \`${host}\`. The goal: an SSH tunnel that (a) forwards the Nebula UI to my machine and (b) lets the server reach my machine's sshd on port ${sshPort}, so Nebula can start agents here.`,
+      '',
+      'Step 1 — create the tunnel. Prefer Burrow (macOS menu-bar SSH manager: supervised, auto-reconnect) if `burrow` is on PATH:',
+      `    ${this.buildBurrowCommand(serverHost, serverPort)}`,
+      '  then connect it from the Burrow menu bar. If Burrow is not installed, use plain ssh in a terminal that stays open:',
+      `    ${this.buildTunnelCommand(serverHost, serverPort)}`,
+      jumpNote,
+      '',
+      `Step 2 — let the server ssh back in. Turn on Remote Login (System Settings → General → Sharing → Remote Login), or \`sudo systemsetup -setremotelogin on\`. Confirm my sshd really listens on port ${sshPort} (\`sudo lsof -iTCP:${sshPort} -sTCP:LISTEN\`); if it does not, tell me — Nebula must be pointed at the real port.`,
+      '',
+      'Step 3 — authorize the server. The server needs key access to my machine, so it can start agents without a password. This one runs ON THE SERVER, so give me the exact line to paste there once the tunnel is up:',
+      `    ssh-copy-id -o ProxyCommand=none -p ${port} $(whoami)@localhost`,
+      '',
+      'Step 4 — install the Nebula tooling here, so agents on my machine can drive notebooks:',
+      `    ${this.buildSetupSkillCommand()}`,
+      `    ${this.buildSetupMcpCommand()}`,
+      '',
+      `Finally, verify and report: the tunnel is connected, \`curl -sf http://localhost:${localPort}/api/health\` answers from my machine, and \`ssh -p ${sshPort} localhost whoami\` works locally. Tell me my username on this machine — Nebula needs it, and it is what \`whoami\` prints. If any step fails, say which one and what the error was rather than working around it.`,
+    ].join('\n');
   }
 
   /**
@@ -572,6 +621,18 @@ class AgentTerminalService {
     // never in the real project dir.
     const remoteLine = this.buildRemoteLaunchCommand(kind, resume, sessionId, continueProject, opts.workdir, opts.mirrorSlug);
     const launchLine = remoteLine ?? this.buildLocalLaunchCommand(kind, resume, sessionId, continueProject, opts.workdir, opts.mirrorSlug, opts.legacyRealCwd);
+    // Type a given launch line ONCE per pty per window. A second copy is never
+    // useful: it lands inside the TUI the first one just opened (becoming a
+    // chat message), or starts a second agent in the same terminal. Guards
+    // every double-fire source at once — a re-run effect, a double click, two
+    // attach paths racing on connect — instead of chasing them individually.
+    const now = Date.now();
+    const dup = this.lastLaunchSent;
+    if (dup && dup.terminalId === this.state.terminalId && dup.line === launchLine &&
+        now - dup.at < LAUNCH_DEDUPE_MS) {
+      return { ok: true };
+    }
+    this.lastLaunchSent = { terminalId: this.state.terminalId, line: launchLine, at: now };
     send.sender(`${launchLine}\r`);
     markOnboardingStep('launchedAgent');
     // Project-scoped agent ledger: tell the server what launched where, and

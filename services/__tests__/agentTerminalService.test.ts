@@ -614,3 +614,89 @@ describe('local launch placement (agent workspace mirror)', () => {
     expect(unwrapLogin(sent[0])).toContain(`codex resume -c 'sandbox_workspace_write.writable_roots=["/data/proj"]'`);
   });
 });
+
+describe('launch idempotency (lab report: continue session typed the command twice)', () => {
+  let sent: string[];
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sent = [];
+    agentTerminalService.setAgentTerminal('t1');
+    agentTerminalService.registerSender('t1', (d) => { sent.push(d); return true; });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    agentTerminalService.unregisterSender('t1');
+    agentTerminalService.setAgentTerminal(null);
+    window.sessionStorage.clear();
+  });
+
+  // Whatever double-fires it (a re-run effect, a double click, two attach
+  // paths racing on connect), typing the launch line twice is never right:
+  // the second copy lands in the TUI the first one just opened, becoming a
+  // chat message — or starts a second agent in the same pty.
+  it('sends one launch line when the same launch is requested twice in a row', () => {
+    agentTerminalService.launchAgent('claude', { resume: true, workdir: '/w/proj' });
+    agentTerminalService.launchAgent('claude', { resume: true, workdir: '/w/proj' });
+    expect(sent.length).toBe(1);
+  });
+
+  it('still allows a genuine relaunch once the dedupe window has passed', () => {
+    agentTerminalService.launchAgent('claude', { resume: true, workdir: '/w/proj' });
+    vi.setSystemTime(new Date(Date.now() + 6000)); // dedupe reads the wall clock
+    agentTerminalService.launchAgent('claude', { resume: true, workdir: '/w/proj' });
+    expect(sent.length).toBe(2);
+  });
+
+  it('does not suppress a DIFFERENT launch (switching kind or workdir)', () => {
+    agentTerminalService.launchAgent('claude', { resume: true, workdir: '/w/proj' });
+    agentTerminalService.launchAgent('codex', { resume: true, workdir: '/w/proj' });
+    expect(sent.length).toBe(2);
+  });
+
+  it('does not suppress a relaunch in a different terminal', () => {
+    const other: string[] = [];
+    agentTerminalService.launchAgent('claude', { workdir: '/w/proj' });
+    agentTerminalService.setAgentTerminal('t2');
+    agentTerminalService.registerSender('t2', (d) => { other.push(d); return true; });
+    agentTerminalService.launchAgent('claude', { workdir: '/w/proj' });
+    expect(other.length).toBe(1);
+    agentTerminalService.unregisterSender('t2');
+  });
+});
+
+describe('buildRemoteSetupAgentPrompt (hand the whole setup to an agent)', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem('nebula-settings', JSON.stringify({
+      remoteAgentPort: 31703, remoteAgentLocalSshPort: 2222, remoteAgentJumpHost: 'randi',
+    }));
+  });
+  afterEach(() => window.localStorage.clear());
+
+  it('names every step the user would otherwise do by hand, with real values', () => {
+    const p = agentTerminalService.buildRemoteSetupAgentPrompt('cri22in002', 3001);
+    // The tunnel, with THIS installation's actual ports and host — not a template.
+    expect(p).toContain('31703');
+    expect(p).toContain('cri22in002');
+    expect(p).toContain('2222');
+    // Both ways to make the tunnel, so the agent can pick what's installed.
+    expect(p).toMatch(/burrow add --name nebula-agent/);
+    expect(p).toMatch(/ssh .*-R 31703:localhost:2222/);
+    // Remote Login is the step people miss: the tunnel comes up and nothing answers.
+    expect(p.toLowerCase()).toContain('remote login');
+    // Skill + MCP install, which is why an agent is doing this at all.
+    expect(p).toContain('nebula setup-skill');
+    expect(p).toContain('setup-mcp');
+  });
+
+  it('tells the agent how to verify, not just what to run', () => {
+    const p = agentTerminalService.buildRemoteSetupAgentPrompt('cri22in002', 3001);
+    expect(p.toLowerCase()).toMatch(/verify|check|confirm/);
+  });
+
+  it('degrades to placeholders instead of lying when the host is unknown', () => {
+    const p = agentTerminalService.buildRemoteSetupAgentPrompt(null, null);
+    expect(p).toContain('<server-host>');
+    expect(p).not.toContain('null');
+  });
+});

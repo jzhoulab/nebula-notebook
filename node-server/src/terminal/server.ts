@@ -12,6 +12,7 @@ import { ptyManager } from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import { terminalBindings, SHARED_SHELL_NAME, TerminalBindingScope } from './binding-store';
 import { remoteAgentConfig } from './remote-agent-config';
+import { discoverRemoteUser } from './remote-agent-identity';
 import { fsService } from '../fs/fs-service';
 import {
   CreateTerminalRequest,
@@ -67,6 +68,24 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
       jumpHost: q.claimJump,
       localUrl: q.claimUrl,
     }));
+  });
+
+  // Find the user's login on their OWN machine over the reverse channel, so
+  // remote-agent mode stops demanding something it can look up (lab report:
+  // "I cannot use it until I put in my username — I thought it should already
+  // know"). Stores what it finds, so every browser inherits it.
+  fastify.post('/api/terminals/agent-config/discover-user', async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = (request.body as { hint?: string } | null) || {};
+    const port = remoteAgentConfig.get().port;
+    if (port === undefined) return reply.send({ user: null, reason: 'no reverse port configured yet' });
+    const user = await discoverRemoteUser(port, body.hint);
+    if (!user) {
+      return reply.send({
+        user: null,
+        reason: 'your machine did not answer on the reverse tunnel — connect the tunnel and authorize this server\'s key, then try again',
+      });
+    }
+    return reply.send({ user: remoteAgentConfig.patch({ user }).user });
   });
 
   fastify.put('/api/terminals/agent-config', async (request: FastifyRequest, reply: FastifyReply) => {
