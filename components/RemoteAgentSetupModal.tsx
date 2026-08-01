@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Laptop } from 'lucide-react';
 import { ModalShell } from './ModalShell';
-import { getSettings, saveSettings, ensureRemoteAgentPort, NebulaSettings } from '../services/settingsService';
+import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentPort, setRemoteAgentPort, NebulaSettings } from '../services/settingsService';
 import { getTerminalServerInfo, checkReverseTunnel } from '../services/terminalService';
 
 interface Props {
@@ -32,6 +32,12 @@ export const RemoteAgentSetupModal: React.FC<Props> = ({ onClose }) => {
     ensureRemoteAgentPort();
     return getSettings();
   });
+  // The port is an INSTALLATION fact owned by the server — converge on it
+  // (claiming our local one if the server has none yet) so the commands shown
+  // here match what every other browser of this user will probe and use.
+  useEffect(() => {
+    void syncRemoteAgentPort().then(() => setSettings(getSettings()));
+  }, []);
   const [serverInfo, setServerInfo] = useState<{ hostname: string | null; port: number | null }>({ hostname: null, port: null });
   const [tunnel, setTunnel] = useState<{ up: boolean; ssh: boolean | null } | null>(null);
   const tunnelUp = tunnel === null ? null : (tunnel.up && tunnel.ssh !== false);
@@ -168,7 +174,12 @@ export const RemoteAgentSetupModal: React.FC<Props> = ({ onClose }) => {
               <div className="flex items-center gap-1.5">
                 <code className="px-2 py-1.5 text-sm bg-slate-50 border border-slate-300 rounded">{settings.remoteAgentPort}</code>
                 <button
-                  onClick={() => persist({ remoteAgentPort: 20000 + Math.floor(Math.random() * 40000) })}
+                  onClick={() => {
+                    const p = 20000 + Math.floor(Math.random() * 40000);
+                    // Server-side too: the override must reach every browser,
+                    // or the others keep probing the old port forever.
+                    void setRemoteAgentPort(p).then(() => setSettings(getSettings()));
+                  }}
                   className="text-xs text-purple-600 hover:text-purple-800 underline decoration-dotted"
                   title="Pick a new random port (if this one collides with another user on the server)"
                 >

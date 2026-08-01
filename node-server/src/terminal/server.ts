@@ -11,6 +11,7 @@ import * as path from 'path';
 import { ptyManager } from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import { terminalBindings, SHARED_SHELL_NAME, TerminalBindingScope } from './binding-store';
+import { remoteAgentPort } from './remote-agent-port';
 import { fsService } from '../fs/fs-service';
 import {
   CreateTerminalRequest,
@@ -48,6 +49,24 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
       hostname: os.hostname(),
       port: Number(process.env.PORT) || 3000,
     });
+  });
+
+  // Reverse-channel port: ONE per installation, owned by the server so every
+  // browser converges on the same number and the user's standing tunnel keeps
+  // working (per-browser random ports orphaned it — lab report). `claim` lets
+  // the first browser to sync keep the port its tunnel already forwards.
+  fastify.get('/api/terminals/agent-port', async (request: FastifyRequest, reply: FastifyReply) => {
+    const raw = (request.query as { claim?: string }).claim;
+    const claim = raw === undefined ? undefined : Number(raw);
+    return reply.send({ port: remoteAgentPort.ensure(claim) });
+  });
+
+  fastify.put('/api/terminals/agent-port', async (request: FastifyRequest, reply: FastifyReply) => {
+    const port = Number((request.body as { port?: unknown } | null)?.port);
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      return reply.status(400).send({ error: 'port must be an integer in 1024-65535' });
+    }
+    return reply.send({ port: remoteAgentPort.set(port) });
   });
 
   // Probe a loopback port on THIS host — used by remote-agent mode to detect

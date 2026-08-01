@@ -28,7 +28,7 @@ import {
 } from '../services/terminalService';
 import { agentTerminalService } from '../services/agentTerminalService';
 import { useNotification } from './NotificationSystem';
-import { getSettings, saveSettings, ensureRemoteAgentPort } from '../services/settingsService';
+import { getSettings, saveSettings, ensureRemoteAgentPort, syncRemoteAgentPort } from '../services/settingsService';
 import { fetchEnvironment, serverIsRemote } from '../services/environmentService';
 import { probeRemoteBins } from '../services/aiAutocompleteService';
 import { RemoteAgentSetupModal } from './RemoteAgentSetupModal';
@@ -367,6 +367,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   // never shows tunnel UI or the "my machine" option (it IS your machine).
   const remoteAgentCfg = serverRemote ? agentTerminalService.getRemoteAgentConfig() : null;
   const remoteAgentPort = remoteAgentCfg?.port ?? null;
+  // Converge on the server's installation-wide reverse port BEFORE probing:
+  // a browser whose locally minted port diverges from the one the user's
+  // standing tunnel forwards would otherwise show "tunnel not detected"
+  // forever (lab report). A change recomputes remoteAgentCfg via the nonce.
+  useEffect(() => {
+    if (!isOpen || tab !== 'agent' || !serverRemote) return;
+    void syncRemoteAgentPort().then((port) => {
+      if (port !== null && port !== remoteAgentPort) setSettingsNonce((n) => n + 1);
+    });
+  }, [isOpen, tab, serverRemote, remoteAgentPort]);
   useEffect(() => {
     if (!isOpen || tab !== 'agent' || !remoteAgentPort) {
       setReverseTunnel(null);
@@ -1292,6 +1302,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                     // autocomplete: agentRunsOn is what the autocomplete transport
                     // reads (see aiAutocompleteService).
                     saveSettings({ remoteAgentEnabled: true, remoteAgentPort: port, agentRunsOn: 'mine' });
+                    void syncRemoteAgentPort(); // claim/adopt the installation port
+
                     // Missing username → the mode can't compose the ssh-back line;
                     // open the setup dialog to finish configuration.
                     if (!s.remoteAgentUser?.trim()) setShowRemoteSetup(true);

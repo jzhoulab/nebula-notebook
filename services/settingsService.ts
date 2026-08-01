@@ -94,9 +94,12 @@ export const saveSettings = (settings: Partial<NebulaSettings>): void => {
 };
 
 /**
- * Reverse-channel port for remote-agent mode. Generated once per browser
- * (random in 20000-59999 so users on a shared login node don't collide),
- * then stable so the user's saved tunnel command keeps working.
+ * Reverse-channel port for remote-agent mode — local fallback generator
+ * (random in 20000-59999 so users on a shared login node don't collide).
+ * The AUTHORITY is the server's installation-wide value: call
+ * syncRemoteAgentPort() wherever the port is about to matter, and this
+ * local value is only a seed/offline stand-in. Per-browser-only ports
+ * orphaned users' tunnels whenever a new browser profile minted its own.
  */
 export const ensureRemoteAgentPort = (): number => {
   const s = getSettings();
@@ -104,4 +107,38 @@ export const ensureRemoteAgentPort = (): number => {
   const port = 20000 + Math.floor(Math.random() * 40000);
   saveSettings({ remoteAgentPort: port });
   return port;
+};
+
+/**
+ * Converge on the server's installation-wide reverse-channel port
+ * (~/.nebula/remote-agent.json). A locally stored port is offered as a
+ * claim: the first browser to sync after upgrade keeps the port its user
+ * already built a tunnel for; afterwards the server value wins everywhere.
+ * Offline/unreachable → keep the local value. Returns the effective port.
+ */
+export const syncRemoteAgentPort = async (): Promise<number | null> => {
+  const local = getSettings().remoteAgentPort;
+  try {
+    const q = local && Number.isInteger(local) ? `?claim=${local}` : '';
+    const resp = await fetch(`/api/terminals/agent-port${q}`);
+    if (!resp.ok) return local ?? null;
+    const data = await resp.json();
+    if (!Number.isInteger(data.port)) return local ?? null;
+    if (data.port !== local) saveSettings({ remoteAgentPort: data.port });
+    return data.port;
+  } catch {
+    return local ?? null;
+  }
+};
+
+/** Explicit port override — persists locally AND server-side (all browsers follow). */
+export const setRemoteAgentPort = async (port: number): Promise<void> => {
+  saveSettings({ remoteAgentPort: port });
+  try {
+    await fetch('/api/terminals/agent-port', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ port }),
+    });
+  } catch { /* offline — the next sync's claim carries it to the server */ }
 };

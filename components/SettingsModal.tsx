@@ -4,6 +4,7 @@ import {
   getSettings,
   saveSettings,
   ensureRemoteAgentPort,
+  syncRemoteAgentPort,
   NebulaSettings,
   IndentationPreference,
 } from '../services/settingsService';
@@ -492,6 +493,9 @@ const SettingsModalContent: React.FC<Props> = ({ isOpen, onClose, onRefresh, isL
                 if (where === 'mine') {
                   const port = s.remoteAgentPort ?? ensureRemoteAgentPort();
                   persistSettings({ agentRunsOn: 'mine', remoteAgentEnabled: true, remoteAgentPort: port });
+                  // Converge on the installation-wide port (claiming ours if
+                  // the server has none) so all browsers probe the same one.
+                  void syncRemoteAgentPort().then(() => notifySettingsChanged());
                   notifySettingsChanged();
                   if (!s.remoteAgentUser?.trim()) setShowRemoteSetup(true);
                   else probeRemoteBins().then((r) => {
