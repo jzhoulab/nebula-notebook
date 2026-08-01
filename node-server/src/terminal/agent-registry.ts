@@ -179,27 +179,29 @@ class AgentRegistry {
   }
 
   /**
-   * list() plus process-table facts for every record whose pty exists:
-   * - `busy`: the pty's shell has a live child — SOMETHING is running there.
-   *   Crucially reported on HIBERNATED records too: the TUI-stream liveness
-   *   machine can mis-score (an agent resumed by hand never re-registers), and
-   *   a client that trusts 'hibernated' then types a launch command straight
-   *   into the running TUI's input box (lab report: a live codex politely
-   *   declined to run the pasted ssh line). The process table is authoritative.
-   * - `idleShell` on live records: the inverse — 'live' but nothing running
-   *   (a hung-then-dead ssh hop leaves exactly this; a dead transport emits
-   *   no teardown, so only the process table can see it).
+   * list() plus tty-foreground facts for every record whose pty exists:
+   * - `busy`: something owns the pty's tty foreground — a TUI, an ssh hop, a
+   *   running command. Crucially reported on HIBERNATED records too: the
+   *   TUI-stream liveness machine can mis-score (an agent resumed by hand
+   *   never re-registers), and a client that trusts 'hibernated' then types a
+   *   launch command straight into the running TUI's input box (lab report: a
+   *   live codex politely declined to run the pasted ssh line). The tty
+   *   foreground is authoritative — and unlike a child-process scan it stays
+   *   false while a fresh login shell sources its rc files.
+   * - `idleShell` on live records: the inverse — 'live' but the foreground is
+   *   a bare shell (a hung-then-dead ssh hop leaves exactly this; a dead
+   *   transport emits no teardown, so only the foreground probe can see it).
    * Unknown checks claim nothing.
    */
-  async listEnriched(): Promise<(AgentRecord & { idleShell?: boolean; busy?: boolean })[]> {
-    return Promise.all(this.list().map(async (r) => {
+  listEnriched(): (AgentRecord & { idleShell?: boolean; busy?: boolean })[] {
+    return this.list().map((r) => {
       if (!ptyManager.get(r.terminalId)) return r;
-      const hasChild = await ptyManager.hasLiveChild(r.terminalId);
-      if (hasChild === null) return r;
+      const busy = ptyManager.isBusy(r.terminalId);
+      if (busy === null) return r;
       return r.state === 'live'
-        ? { ...r, idleShell: !hasChild, busy: hasChild }
-        : { ...r, busy: hasChild };
-    }));
+        ? { ...r, idleShell: !busy, busy }
+        : { ...r, busy };
+    });
   }
 
   /** Hibernate: close the pty; the record (and on-disk trajectory) remain. */

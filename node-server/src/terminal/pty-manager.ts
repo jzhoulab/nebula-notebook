@@ -3,8 +3,6 @@
  */
 
 import * as path from 'path';
-import { promises as fsp } from 'fs';
-import { execFile } from 'child_process';
 import * as pty from '@homebridge/node-pty-prebuilt-multiarch';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -203,32 +201,33 @@ export class PtyManager {
     return this.sessions.get(id);
   }
 
+  /** Foreground process names that mean "idle prompt, nothing running". */
+  private static PLAIN_SHELL_RE = /^-?(bash|zsh|sh|dash|fish|tcsh|ksh)$/;
+
   /**
-   * Whether the pty's shell has any child process — i.e. something (an agent
-   * CLI, an ssh hop, a user command) is actually running in it. `false` means
-   * a bare idle shell with certainty; `null` means unknown (no such pty, or
-   * pgrep unavailable) and callers must not conclude anything from it.
+   * Whether something OWNS THE TTY FOREGROUND of this pty — an agent TUI, an
+   * ssh hop, a command the user ran. `false` means the foreground is the shell
+   * itself (idle prompt) with certainty; `null` means unknown (no such pty, or
+   * the foreground can't be read) and callers must not conclude anything.
+   *
+   * Foreground, NOT a child-process scan: a login shell sourcing its rc files
+   * (modules, conda init — seconds on GPFS) has transient CHILDREN from t=0
+   * but never yields the tty to them, so a child-scan reported every freshly
+   * created pty as busy — the launch guard then adopted a nonexistent agent
+   * instead of typing the launch command ("start a new agent only opens a
+   * terminal"). The tty's foreground process group is the honest signal, and
+   * a single O(1) native read (tcgetpgrp) — no process-table walk.
    */
-  async hasLiveChild(id: string): Promise<boolean | null> {
+  isBusy(id: string): boolean | null {
     const session = this.sessions.get(id);
     if (!session) return null;
-    const pid = session.pty.pid;
-    // Fast path (Linux): the kernel lists a process's children directly —
-    // an O(1) ~3ms read, vs pgrep's O(all processes) table scan (~50ms on a
-    // busy shared login node with 1300+ processes). Absent on macOS and on
-    // kernels without CONFIG_PROC_CHILDREN — fall back to pgrep there.
     try {
-      const children = await fsp.readFile(`/proc/${pid}/task/${pid}/children`, 'utf-8');
-      return children.trim().length > 0;
-    } catch { /* not Linux (or file gone with the process) — pgrep decides */ }
-    return new Promise((resolve) => {
-      execFile('pgrep', ['-P', String(pid)], (error) => {
-        if (!error) return resolve(true); // exit 0: at least one child
-        // pgrep exits 1 for "no processes matched" — that's a definitive no.
-        const code = (error as { code?: number | string }).code;
-        resolve(code === 1 ? false : null);
-      });
-    });
+      const fg = (session.pty.process || '').split('/').pop() || '';
+      if (!fg) return null;
+      return !PtyManager.PLAIN_SHELL_RE.test(fg);
+    } catch {
+      return null; // foreground unreadable — claim nothing
+    }
   }
 
   /**
@@ -358,7 +357,7 @@ export class PtyManager {
     // everything OFF instead.
     try {
       const fg = (session.pty.process || '').split('/').pop() || '';
-      if (/^-?(bash|zsh|sh|dash|fish|tcsh|ksh)$/.test(fg)) {
+      if (PtyManager.PLAIN_SHELL_RE.test(fg)) {
         session.activeModes.clear();
       }
     } catch { /* can't inspect foreground — keep tracked state */ }

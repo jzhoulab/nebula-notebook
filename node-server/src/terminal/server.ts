@@ -85,7 +85,7 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
   // List all terminals
   // ---- Agent registry: project-scoped agent sessions (see agent-registry.ts) ----
   fastify.get('/api/agents', async (_request: FastifyRequest, reply: FastifyReply) => {
-    return reply.send({ agents: await agentRegistry.listEnriched() });
+    return reply.send({ agents: agentRegistry.listEnriched() });
   });
 
   fastify.post('/api/agents/register', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -216,13 +216,15 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
     return reply.send({ ok: true });
   });
 
-  // Process-table probe: does this pty's shell have a live child? Clients MUST
-  // check this before typing a launch command into an existing pty — records
-  // can mis-score liveness (a hand-resumed agent never re-registers), and a
-  // launch line typed into a live TUI becomes a chat prompt (lab report).
-  // busy:null = unknown (pty gone / pgrep unavailable) — claim nothing.
+  // Tty-foreground probe: is something running in this pty's foreground (a
+  // TUI, an ssh hop, a command)? Clients MUST check this before typing a
+  // launch command into an existing pty — records can mis-score liveness (a
+  // hand-resumed agent never re-registers), and a launch line typed into a
+  // live TUI becomes a chat prompt (lab report). A fresh login shell sourcing
+  // rc files reads false — its init children never own the tty.
+  // busy:null = unknown (pty gone / foreground unreadable) — claim nothing.
   fastify.get('/api/terminals/:id/busy', async (request: FastifyRequest, reply: FastifyReply) => {
-    const busy = await ptyManager.hasLiveChild((request.params as any).id);
+    const busy = ptyManager.isBusy((request.params as any).id);
     return reply.send({ busy });
   });
 

@@ -620,7 +620,7 @@ class AgentTerminalService {
     // silent failure the error-regex didn't name). More reliable than only
     // watching for known error strings. BUT escape-inference has blind spots
     // (a TUI that was already drawn emits no new init; boot escapes scroll out
-    // of replay), so before declaring death, ask the process table: a busy pty
+    // of replay), so before declaring death, ask the tty foreground: a busy pty
     // means something IS running — adopt it instead of failing (lab report:
     // a live resumed codex was declared "didn't start", then fed a launch line).
     const timer = setTimeout(() => {
@@ -629,7 +629,7 @@ class AgentTerminalService {
         const w = this.launchWatch;
         if (w?.phase !== 'launch') return; // resolved meanwhile
         if (busy === true) {
-          // Confirmed up by the process table (status is already 'running'
+          // Confirmed up by the foreground probe (status is already 'running'
           // optimistically) — switch to exit-watching like a seen TUI-init.
           if (w.timer) { clearTimeout(w.timer); w.timer = null; }
           w.phase = 'run';
@@ -748,9 +748,9 @@ class AgentTerminalService {
 
   async markRunning(): Promise<void> {
     // User-asserted ground truth ("my agent IS running here") — but verify
-    // against the process table first: busy === false is DEFINITIVE (the
-    // shell has no child), and injecting the bootstrap into a bare shell
-    // would EXECUTE it as shell commands. Unknown (null) trusts the user.
+    // against the tty foreground first: busy === false is DEFINITIVE (the
+    // foreground is a bare shell), and injecting the bootstrap into a bare
+    // shell would EXECUTE it as shell commands. Unknown (null) trusts the user.
     const terminalId = this.state.terminalId;
     if (terminalId) {
       const busy = await probeTerminalBusy(terminalId);

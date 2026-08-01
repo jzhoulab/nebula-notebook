@@ -229,7 +229,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   // re-registers, so its record stays 'hibernated'), and a live TUI eats the
   // typed launch line as a chat prompt — a lab user's resumed codex politely
   // declined to run the pasted ssh command while the bar said "didn't start".
-  // The process table is the authority; probe the pty right before typing.
+  // The tty foreground is the authority; probe the pty right before typing.
+  // (Foreground, not a child scan: a fresh login shell sourcing rc files has
+  // transient children but an idle foreground — child-based busy adopted a
+  // nonexistent agent on every NEW launch, typing nothing at all.)
   // Busy ⇒ adopt what's running (kind from the record when known) and attach.
   const guardedAgentLaunch = useCallback(async (kind: 'claude' | 'codex', opts: {
     resume?: boolean; continueProject?: boolean; workdir?: string | null; mirrorSlug?: string | null; legacyRealCwd?: string | null;
@@ -1027,7 +1030,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
           {/* Escape hatch AT the wrong verdict: detection is inference and can
               mis-score — let the user assert the truth right here instead of
               hunting for it in the more▾ menu. markRunning re-verifies against
-              the process table, so a wrong assertion can't type into a bare
+              the tty foreground, so a wrong assertion can't type into a bare
               shell. copy-prompt covers "I'll paste the context myself". */}
           <button
             onClick={() => { void agentTerminalService.markRunning(); }}

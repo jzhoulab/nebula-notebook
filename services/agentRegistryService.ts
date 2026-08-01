@@ -20,14 +20,14 @@ export interface AgentRecord {
   mirrorSlug?: string;
   state: 'live' | 'hibernated';
   /**
-   * Server-observed: the live pty's shell has no child process — nothing is
-   * actually running in it (agent gone, or its ssh hop died). The record is
-   * resumable, but there is no running agent to attach to.
+   * Server-observed: the live pty's tty foreground is a bare shell — nothing
+   * is actually running in it (agent gone, or its ssh hop died). The record
+   * is resumable, but there is no running agent to attach to.
    */
   idleShell?: boolean;
   /**
-   * Server-observed on ANY record whose pty exists: the shell has a live
-   * child — something IS running in that pty, whatever `state` claims (a
+   * Server-observed on ANY record whose pty exists: something owns the tty
+   * foreground — a TUI is running in that pty, whatever `state` claims (a
    * hand-resumed agent never re-registers, so its record stays 'hibernated').
    * Typing a launch command into a busy pty feeds it to the running process.
    */
@@ -83,8 +83,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
 }
 
 /**
- * Direct process-table probe of a pty: does its shell have a live child?
- * Works without an agent record (hand-started sessions have none).
+ * Direct tty-foreground probe of a pty: is something running in front of the
+ * shell (a TUI, an ssh hop, a command)? Works without an agent record
+ * (hand-started sessions have none), and stays false while a fresh login
+ * shell sources its rc files — init children never own the tty.
  * null = unknown (pty gone, server unreachable) — callers must claim nothing.
  */
 export async function probeTerminalBusy(terminalId: string): Promise<boolean | null> {

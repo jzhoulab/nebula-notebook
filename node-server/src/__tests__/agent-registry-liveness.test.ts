@@ -19,7 +19,8 @@ process.env.NEBULA_AGENTS_FILE = path.join(
 );
 // The registry consults ptyManager for reconciliation ('live' requires a pty)
 // and subscribes listeners — stub it so unit tests need no real ptys.
-let stubHasLiveChild: boolean | null = true;
+// stubBusy stands in for the tty-foreground probe (isBusy).
+let stubBusy: boolean | null = true;
 vi.mock('../terminal/pty-manager', () => ({
   ptyManager: {
     get: () => ({ id: 'stub' }),
@@ -27,7 +28,7 @@ vi.mock('../terminal/pty-manager', () => ({
     addExitListener: () => () => {},
     addDataListener: () => () => {},
     kill: () => true,
-    hasLiveChild: async () => stubHasLiveChild,
+    isBusy: () => stubBusy,
   },
 }));
 const { agentRegistry } = await import('../terminal/agent-registry');
@@ -43,7 +44,7 @@ describe('agent registry', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     agentRegistry.remove(base.terminalId);
-    stubHasLiveChild = true;
+    stubBusy = true;
   });
   afterEach(() => vi.useRealTimers());
 
@@ -77,20 +78,20 @@ describe('agent registry', () => {
     expect(agentRegistry.list().find(r => r.terminalId === base.terminalId)?.state).toBe('live');
   });
 
-  it('listEnriched marks a live record idleShell when its pty shell has no child', async () => {
+  it('listEnriched marks a live record idleShell when nothing owns the pty foreground', async () => {
     // A dead ssh hop (or an agent that died without TUI teardown) leaves the
     // pty at a bare shell while the record still says 'live' — the enriched
     // list exposes that so clients don't adopt a phantom running agent.
     agentRegistry.register({ ...base });
-    stubHasLiveChild = false;
+    stubBusy = false;
     const idle = await agentRegistry.listEnriched();
     expect(idle.find(r => r.terminalId === base.terminalId)?.idleShell).toBe(true);
 
-    stubHasLiveChild = true; // something is running in the pty — not idle
+    stubBusy = true; // something is running in the pty — not idle
     const busy = await agentRegistry.listEnriched();
     expect(busy.find(r => r.terminalId === base.terminalId)?.idleShell).toBe(false);
 
-    stubHasLiveChild = null; // unknown (pgrep unavailable) — claim nothing
+    stubBusy = null; // unknown (foreground unreadable) — claim nothing
     const unknown = await agentRegistry.listEnriched();
     expect(unknown.find(r => r.terminalId === base.terminalId)?.idleShell).toBeUndefined();
   });
@@ -110,15 +111,15 @@ describe('busy enrichment (lab report: launch line typed into a live TUI)', () =
   beforeEach(() => {
     vi.useFakeTimers();
     agentRegistry.remove(base.terminalId);
-    stubHasLiveChild = true;
+    stubBusy = true;
   });
   afterEach(() => vi.useRealTimers());
 
   // A HIBERNATED record whose pty still hosts a running process: the liveness
   // machine mis-scored (or the agent was resumed by hand, never re-registered).
-  // The record must carry the process-table fact so no client types a launch
+  // The record must carry the tty-foreground fact so no client types a launch
   // command into whatever is running there.
-  it('reports busy on a hibernated record whose pty has a live child', async () => {
+  it('reports busy on a hibernated record whose pty foreground is occupied', async () => {
     agentRegistry.register(base);
     // teardown with no re-init → hibernated (existing machinery)
     agentRegistry.observeOutput(base.terminalId, '\x1b[?1049l');
@@ -130,11 +131,11 @@ describe('busy enrichment (lab report: launch line typed into a live TUI)', () =
 
   it('reports busy=false when the shell is bare, and claims nothing when unknown', async () => {
     agentRegistry.register(base);
-    stubHasLiveChild = false;
+    stubBusy = false;
     let rec = (await agentRegistry.listEnriched()).find((r) => r.terminalId === base.terminalId)!;
     expect(rec.busy).toBe(false);
     expect(rec.idleShell).toBe(true); // live record keeps the existing field
-    stubHasLiveChild = null; // pgrep unavailable — claim nothing
+    stubBusy = null; // foreground unreadable — claim nothing
     rec = (await agentRegistry.listEnriched()).find((r) => r.terminalId === base.terminalId)!;
     expect(rec.busy).toBeUndefined();
   });
