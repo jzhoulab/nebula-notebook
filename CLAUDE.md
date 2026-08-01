@@ -17,7 +17,10 @@ cd node-server && npm install  # Backend dependencies
 npm run dev                    # Development mode with hot reload (Vite on :3000, Node on :8000)
 npm run start                  # Alias for npm run dev
 npm run prod                   # Production mode (Node.js on :3000 only) — runs the backend
-                               # from SOURCE via tsx --watch; a git pull hot-restarts it
+                               # from SOURCE via tsx --watch. NOTE: --watch relies on inotify,
+                               # which network filesystems (GPFS/NFS) don't deliver reliably —
+                               # on such a deploy a `git pull` does NOT restart it. Restart the
+                               # server explicitly and verify a new route actually answers.
 
 # Build
 npm run build                  # Frontend production build only (vite). The backend has NO
