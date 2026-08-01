@@ -16,10 +16,13 @@ cd node-server && npm install  # Backend dependencies
 # Run the application
 npm run dev                    # Development mode with hot reload (Vite on :3000, Node on :8000)
 npm run start                  # Alias for npm run dev
-npm run prod                   # Production mode (Node.js on :3000 only)
+npm run prod                   # Production mode (Node.js on :3000 only) — runs the backend
+                               # from SOURCE via tsx --watch; a git pull hot-restarts it
 
 # Build
-npm run build                  # Production build (frontend + backend)
+npm run build                  # Frontend production build only (vite). The backend has NO
+                               # build step in prod; node-server's `npm run build` (tsc) exists
+                               # for `npm start` but its dist/ goes stale — never deploy from it
 npm run preview                # Preview production build
 
 # Testing
