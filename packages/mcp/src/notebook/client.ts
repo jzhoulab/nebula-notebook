@@ -841,8 +841,9 @@ export class NebulaClient {
   async uploadFile(
     destDir: string,
     content: Buffer,
-    filename: string
-  ): Promise<ToolResult<void>> {
+    filename: string,
+    options: { onConflict?: 'rename' | 'overwrite' | 'fail' } = {}
+  ): Promise<ToolResult<{ path: string; name: string }>> {
     try {
       const blob = new Blob([content]);
       const formData = new FormData();
@@ -852,7 +853,8 @@ export class NebulaClient {
       formData.append('path', destDir);
       formData.append('file', blob, filename);
 
-      const url = `${this.baseUrl}/api/fs/upload`;
+      const conflictQ = options.onConflict ? `?on_conflict=${options.onConflict}` : '';
+      const url = `${this.baseUrl}/api/fs/upload${conflictQ}`;
       const response = await fetch(url, {
         method: 'POST',
         body: formData,
@@ -870,7 +872,17 @@ export class NebulaClient {
         return { success: false, error: errorDetail };
       }
 
-      return { success: true };
+      // The server may have stored the file under a DIFFERENT name than
+      // requested ('rename' conflict policy) — return its answer, never
+      // assume. Reporting the requested path as written sent an agent's
+      // edits to a `_1` copy nobody was reading (lab report).
+      try {
+        const body = await response.json() as { file?: { path?: string; name?: string } };
+        if (body?.file?.path && body.file.name) {
+          return { success: true, data: { path: body.file.path, name: body.file.name } };
+        }
+      } catch { /* older server without a body — fall through */ }
+      return { success: true, data: { path: `${destDir.replace(/\/+$/, '')}/${filename}`, name: filename } };
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       return { success: false, error: `Upload failed: ${error}` };

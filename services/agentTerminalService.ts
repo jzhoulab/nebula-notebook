@@ -508,6 +508,12 @@ class AgentTerminalService {
       // the file is on the Nebula server, not its filesystem.
       'For NON-notebook files on the server (data, logs, scripts): `nebula fs ls|cat|download|upload <path>` — ' +
       'a path that starts at the server root is on the SERVER; do not assume your local filesystem has it. ' +
+      // Observed failure: an agent's first write was rejected for lack of a
+      // session, costing a confused retry. Name the requirement up front.
+      'Before your first notebook WRITE, run `nebula session start <path>` (takes the agent lock; the ' +
+      'browser shows an "agent session" badge) and `nebula session end <path>` when done. ' +
+      'To REPLACE an existing server file, `nebula fs write` overwrites; `nebula fs upload` refuses a name ' +
+      'collision unless you pass --overwrite (or --rename to keep both). ' +
       'Exit code 9 = edit conflict (the current content is printed — retry against it). ' +
       // Observed failure: an agent believed notebook cell source lived only
       // "inside Nebula" and tried to ferry edited source back through the

@@ -1026,7 +1026,22 @@ export class FilesystemService {
   /**
    * Upload a file to a directory
    */
-  async uploadFile(destDir: string, tempFilePath: string, originalName: string): Promise<FileInfoResponse> {
+  /**
+   * `onConflict` says what an existing file of the same name means:
+   * - 'rename' (default): keep both — store under `name_1.ext`. Right for
+   *   browser drag-drop, where a gesture must never clobber. Callers MUST
+   *   surface the returned path: the stored name is not the requested one.
+   * - 'overwrite': replace in place (cp semantics).
+   * - 'fail': refuse loudly. For API/CLI callers who named an exact
+   *   destination — silently storing elsewhere while reporting success sent
+   *   an agent's edits to `train_…_1.py` nobody was reading (lab report).
+   */
+  async uploadFile(
+    destDir: string,
+    tempFilePath: string,
+    originalName: string,
+    onConflict: 'rename' | 'overwrite' | 'fail' = 'rename'
+  ): Promise<FileInfoResponse> {
     const normalizedDir = this.normalizePath(destDir);
 
     if (!fs.existsSync(normalizedDir)) {
@@ -1041,8 +1056,11 @@ export class FilesystemService {
     // Determine final path
     let finalPath = path.join(normalizedDir, originalName);
 
-    // If file exists, find unique name
-    if (fs.existsSync(finalPath)) {
+    if (fs.existsSync(finalPath) && onConflict !== 'overwrite') {
+      if (onConflict === 'fail') {
+        throw new Error(`already exists: ${finalPath}`);
+      }
+      // 'rename': find a unique name
       const ext = path.extname(originalName);
       const name = path.basename(originalName, ext);
       let counter = 1;

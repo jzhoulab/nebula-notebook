@@ -344,7 +344,12 @@ export default async function fsRoutes(fastify: FastifyInstance) {
         writeStream.on('error', reject);
       });
 
-      const info = await fsService.uploadFile(destPath, tmpPath, data.filename);
+      // Conflict policy comes from the query string (multipart field order is
+      // fragile — see the `path` field comment above). Default 'rename'
+      // preserves browser drag-drop's never-clobber behavior.
+      const rawConflict = (request.query as { on_conflict?: string } | undefined)?.on_conflict;
+      const onConflict = rawConflict === 'overwrite' || rawConflict === 'fail' ? rawConflict : 'rename';
+      const info = await fsService.uploadFile(destPath, tmpPath, data.filename, onConflict);
 
       // Clean up temp file
       try { nodeFs.unlinkSync(tmpPath); } catch { /* ignore */ }
@@ -352,7 +357,9 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       return reply.send({ status: 'ok', file: info });
     } catch (err) {
       if (err instanceof Error) {
-        if (err.message.includes('not found')) {
+        if (err.message.includes('already exists')) {
+          return reply.code(409).send({ detail: err.message });
+        } else if (err.message.includes('not found')) {
           return reply.code(404).send({ detail: err.message });
         } else if (err.message.includes('permission')) {
           return reply.code(403).send({ detail: err.message });

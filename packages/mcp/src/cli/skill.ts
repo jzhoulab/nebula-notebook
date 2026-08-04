@@ -74,7 +74,9 @@ nebula session start <path>              # hold the agent edit lock (persists ac
 nebula session end <path>
 nebula compute status|queues|alloc|ls|use|cancel   # cluster compute (see below)
 nebula fs ls|cat|write|rm|mv|download|upload       # SERVER files — remote agents only;
-                                                   # in a Nebula terminal use the shell
+                                                   # in a Nebula terminal use the shell.
+                                                   # write REPLACES a file; upload FAILS on
+                                                   # a name collision (--overwrite / --rename)
 \`\`\`
 
 All commands accept \`--json\` (raw) and \`--quiet\` (no hint line).

@@ -283,23 +283,36 @@ async function fsDownload(argv: string[]): Promise<number> {
 // fs upload
 // =============================================================================
 
-const UPLOAD_HELP = `usage: nebula fs upload <local-path> <server-dir> [--name NAME]
+const UPLOAD_HELP = `usage: nebula fs upload <local-path> <server-dir> [--name NAME] [--overwrite | --rename]
 
 Uploads a local file into a directory on the server (text or binary).
 
+If the destination file already exists the upload FAILS unless you choose:
+  --overwrite   replace the existing file (cp semantics)
+  --rename      keep both — the server stores under name_1.ext and the real
+                stored path is printed (it is NOT the name you asked for)
+
 examples:
   nebula fs upload ./local.csv data/
+  nebula fs upload ./model.py scripts/ --overwrite
   nebula fs upload ./local.csv data/ --name renamed.csv`;
 
 async function fsUpload(argv: string[]): Promise<number> {
-  const { values, positionals } = parse(argv, { name: { type: 'string' } });
+  const { values, positionals } = parse(argv, {
+    name: { type: 'string' },
+    overwrite: { type: 'boolean' },
+    rename: { type: 'boolean' },
+  });
   if (values.help) {
     console.log(UPLOAD_HELP);
     return EXIT.OK;
   }
-  const usage = 'nebula fs upload <local-path> <server-dir> [--name NAME]';
+  const usage = 'nebula fs upload <local-path> <server-dir> [--name NAME] [--overwrite | --rename]';
   const localPath = requirePositional(positionals, 0, 'local-path', usage);
   const serverDir = requirePositional(positionals, 1, 'server-dir', usage);
+  if (values.overwrite && values.rename) {
+    throw new CliError('--overwrite and --rename are mutually exclusive', EXIT.USAGE);
+  }
 
   let content: Buffer;
   try {
@@ -309,15 +322,34 @@ async function fsUpload(argv: string[]): Promise<number> {
   }
   const filename = (values.name as string | undefined) ?? path.basename(localPath);
 
-  const result = await clientFor(values).uploadFile(serverDir, content, filename);
-  if (!result.success) throw toCliError(result.error);
+  // Default is FAIL on conflict: an agent that named an exact destination must
+  // hear "that exists" — not have its file silently stored under `name_1.ext`
+  // while the success message claims otherwise (lab report: edits went to a
+  // dedupe copy nobody was reading).
+  const onConflict = values.overwrite ? 'overwrite' : values.rename ? 'rename' : 'fail';
+  const result = await clientFor(values).uploadFile(serverDir, content, filename, { onConflict });
+  if (!result.success) {
+    if (/already exists/i.test(result.error ?? '')) {
+      throw new CliError(
+        result.error!, EXIT.ERROR,
+        'pass --overwrite to replace it, or --rename to keep both (stored as name_1.ext)'
+      );
+    }
+    throw toCliError(result.error);
+  }
 
-  const dest = `${serverDir.replace(/\/+$/, '')}/${filename}`;
+  // Always report the SERVER-confirmed path — under --rename it differs from
+  // the requested name, and that difference must be impossible to miss.
+  const dest = result.data!.path;
+  const renamed = result.data!.name !== filename;
   if (values.json) {
-    printJson({ from: localPath, to: dest, bytes: content.length });
+    printJson({ from: localPath, to: dest, bytes: content.length, renamed });
     return EXIT.OK;
   }
   console.log(`uploaded ${localPath} -> ${dest} (${content.length} bytes)`);
+  if (renamed) {
+    console.log(`NOTE: ${filename} already existed — stored as ${result.data!.name} instead`);
+  }
   printHint(`verify with: nebula fs ls ${serverDir}`, values);
   return EXIT.OK;
 }

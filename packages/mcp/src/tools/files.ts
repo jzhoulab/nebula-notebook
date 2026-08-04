@@ -331,23 +331,36 @@ export const downloadFileTool: Tool<DownloadFileParams, DownloadFileResult> = {
 export interface UploadFileParams {
   local_path: string;
   server_path: string;
+  /** What an existing file of the same name means. Default: fail loudly. */
+  on_conflict?: 'fail' | 'overwrite' | 'rename';
 }
 
 export interface UploadFileResult {
   localPath: string;
   serverPath: string;
   size: number;
+  /** True when the server stored under a deduped name ('rename' policy). */
+  renamed: boolean;
 }
 
 export const uploadFileTool: Tool<UploadFileParams, UploadFileResult> = {
   definition: {
     name: 'upload_file',
-    description: 'Upload a local file to the server. Supports both text and binary files.',
+    description:
+      'Upload a local file to the server. Supports both text and binary files. ' +
+      'Fails if the destination file already exists unless on_conflict says otherwise.',
     inputSchema: {
       type: 'object',
       properties: {
         local_path: { type: 'string', description: 'Local path of the file to upload' },
         server_path: { type: 'string', description: 'Destination path on the server' },
+        on_conflict: {
+          type: 'string',
+          enum: ['fail', 'overwrite', 'rename'],
+          description:
+            "If the file already exists: 'fail' (default) refuses, 'overwrite' replaces it, " +
+            "'rename' keeps both (server stores name_1.ext — check the reported path)",
+        },
       },
       required: ['local_path', 'server_path'],
     },
@@ -364,18 +377,27 @@ export const uploadFileTool: Tool<UploadFileParams, UploadFileResult> = {
       const stats = await fs.stat(params.local_path);
       const filename = pathModule.basename(params.local_path);
 
-      // Upload to server using multipart form
-      const result = await client.uploadFile(params.server_path, content, filename);
+      // Default FAIL on conflict: the caller named an exact destination, and
+      // silently storing under `name_1.ext` while reporting success sent an
+      // agent's edits to a dedupe copy nobody was reading (lab report).
+      const result = await client.uploadFile(params.server_path, content, filename, {
+        onConflict: params.on_conflict ?? 'fail',
+      });
       if (!result.success) {
-        return { success: false, error: result.error };
+        const conflictHint = /already exists/i.test(result.error ?? '')
+          ? " — pass on_conflict: 'overwrite' to replace it, or 'rename' to keep both"
+          : '';
+        return { success: false, error: `${result.error}${conflictHint}` };
       }
 
       return {
         success: true,
         data: {
           localPath: params.local_path,
-          serverPath: params.server_path,
+          // The server's answer, not the request: under 'rename' they differ.
+          serverPath: result.data!.path,
           size: stats.size,
+          renamed: result.data!.name !== filename,
         },
       };
     } catch (e) {
@@ -388,8 +410,9 @@ export const uploadFileTool: Tool<UploadFileParams, UploadFileResult> = {
     if (!result.success) {
       return [{ type: 'text', text: `Error: ${result.error}` }];
     }
-    const { localPath, serverPath, size } = result.data!;
-    return [{ type: 'text', text: `Uploaded: ${localPath} → ${serverPath} (${size} bytes)` }];
+    const { localPath, serverPath, size, renamed } = result.data!;
+    const note = renamed ? ' — NOTE: destination existed, stored under a deduped name' : '';
+    return [{ type: 'text', text: `Uploaded: ${localPath} → ${serverPath} (${size} bytes)${note}` }];
   },
 };
 
