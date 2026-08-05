@@ -24,6 +24,7 @@ import * as childProcess from 'child_process';
 import * as kernelspecModule from '../kernel/kernelspec';
 import {
   discoverKernelSpecs,
+  getKernelSearchPaths,
   getKernelSpec,
   hasKernelSpec,
 } from '../kernel/kernelspec';
@@ -62,6 +63,27 @@ const createMockChildProcess = (pid: number) => {
 
 describe('Kernelspec Discovery', () => {
   describe('discoverKernelSpecs', () => {
+    it('should include XDG_DATA_HOME kernels on Linux', () => {
+      if (process.platform !== 'linux') {
+        return;
+      }
+
+      const previous = process.env.XDG_DATA_HOME;
+      process.env.XDG_DATA_HOME = '/tmp/nebula-xdg-data';
+
+      try {
+        expect(getKernelSearchPaths()).toContain(
+          path.join('/tmp/nebula-xdg-data', 'jupyter', 'kernels')
+        );
+      } finally {
+        if (previous === undefined) {
+          delete process.env.XDG_DATA_HOME;
+        } else {
+          process.env.XDG_DATA_HOME = previous;
+        }
+      }
+    });
+
     it('should return an array of kernelspecs', () => {
       const specs = discoverKernelSpecs();
       expect(Array.isArray(specs)).toBe(true);

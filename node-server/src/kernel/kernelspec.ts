@@ -33,6 +33,10 @@ export function getKernelSearchPaths(): string[] {
   } else if (process.platform === 'win32') {
     paths.push(path.join(home, 'AppData', 'Roaming', 'jupyter', 'kernels'));
   } else {
+    const xdgDataHome = process.env.XDG_DATA_HOME;
+    if (xdgDataHome) {
+      paths.push(path.join(xdgDataHome, 'jupyter', 'kernels'));
+    }
     paths.push(path.join(home, '.local', 'share', 'jupyter', 'kernels'));
   }
 
