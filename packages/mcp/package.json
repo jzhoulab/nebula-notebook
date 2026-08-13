@@ -1,6 +1,6 @@
 {
   "name": "nebula-notebook-mcp",
-  "version": "0.4.15",
+  "version": "0.4.16",
   "description": "MCP server for Nebula Notebook — lets agents (Claude Code, Codex, etc.) read, edit, and execute notebooks on a running Nebula server",
   "type": "module",
   "main": "dist/index.js",
