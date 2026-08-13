@@ -20,6 +20,7 @@ import type {
   QosLoad,
 } from './types';
 import { formatWalltime } from './util';
+import { normalizeArch } from './arch';
 
 const execFileP = promisify(execFile);
 
@@ -212,7 +213,25 @@ export class SlurmScheduler implements Scheduler {
     // GPU capacity per partition, from per-node TRES: configured (CfgTRES) vs
     // allocated (AllocTRES) `gres/gpu`, so we can report *idle* (available) GPUs
     // rather than a per-node count. Generic — no site-specific node/gres names.
+    // The same per-node dump also carries each node's CPU arch (`Arch=`), which
+    // multi-arch clusters (x86_64 login + aarch64 queues) need at submit time.
     if (nodeRes.status === 'fulfilled') {
+      const archAgg = new Map<string, Set<string>>();
+      for (const line of nodeRes.value.stdout.split('\n')) {
+        if (!line.trim()) continue;
+        const arch = scontrolField(line, 'Arch');
+        const nodeParts = scontrolField(line, 'Partitions');
+        if (arch && nodeParts) {
+          for (const part of nodeParts.split(',')) {
+            (archAgg.get(part) ?? archAgg.set(part, new Set()).get(part)!).add(arch);
+          }
+        }
+      }
+      for (const [part, archs] of archAgg) {
+        const p = partitions.get(part);
+        if (p) p.archs = [...archs].sort();
+      }
+
       // Aggregate per (partition, GPU model) — heterogeneous queues mix cards.
       const agg = new Map<string, Map<string, { total: number; used: number }>>();
       for (const line of nodeRes.value.stdout.split('\n')) {
@@ -297,6 +316,19 @@ export class SlurmScheduler implements Scheduler {
     }
 
     return { partitions: [...partitions.values()], qoses, fetchedAt: Date.now() };
+  }
+
+  async partitionArch(partition: string): Promise<string | null> {
+    try {
+      const load = await this.load();
+      const archs = load.partitions.find((p) => p.name === partition)?.archs;
+      // Mixed-arch partitions have no safe pick — the scheduler decides the
+      // node, so treat them as unknown rather than guessing wrong half the time.
+      if (!archs || archs.length !== 1) return null;
+      return normalizeArch(archs[0]);
+    } catch {
+      return null;
+    }
   }
 
   async allowedQos(partition: string): Promise<string[] | null> {

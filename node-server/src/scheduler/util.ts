@@ -16,3 +16,18 @@ export function formatWalltime(minutes: number): string {
 export function shellQuote(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
+
+/**
+ * Compress a job log's tail into a one-line failure reason: the last few
+ * non-empty lines (the error is at the end), capped so a pathological log
+ * can't flood the UI. Null when there is nothing to say.
+ */
+export function summarizeLogTail(content: string): string | null {
+  const lines = content
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return null;
+  const joined = lines.slice(-3).join(' | ');
+  return joined.length > 300 ? `…${joined.slice(-300)}` : joined;
+}

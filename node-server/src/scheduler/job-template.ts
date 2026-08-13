@@ -30,6 +30,13 @@ export interface LaunchContext {
   cwd: string;
   /** Directory (on shared storage) for job scripts + logs */
   stateDir: string;
+  /**
+   * Per-arch runtime substitutions (node's process.arch keys, e.g. 'arm64')
+   * for partitions whose CPU arch differs from this server's — see arch.ts.
+   */
+  archOverrides?: Record<string, { nodeBin: string; cwd: string; scriptPath: string }>;
+  /** Arch of nodeBin itself. Defaults to process.arch; overridable for tests. */
+  serverArch?: string;
 }
 
 export function renderJobScript(

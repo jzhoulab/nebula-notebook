@@ -27,6 +27,8 @@ export interface PartitionLoad {
   gpus?: { type: string; total: number; idle: number }[];
   nodes: { idle: number; mixed: number; alloc: number; down: number; total: number };
   jobs: { pending: number; running: number };
+  /** Distinct CPU arches of the partition's nodes (e.g. 'x86_64', 'aarch64'). */
+  archs?: string[];
 }
 
 export interface QosLoad {

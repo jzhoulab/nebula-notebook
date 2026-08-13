@@ -96,6 +96,10 @@ export class MockScheduler implements Scheduler {
     return null;
   }
 
+  async partitionArch(_partition: string): Promise<string | null> {
+    return null; // mock cluster is arch-homogeneous
+  }
+
   async estimateStart(): Promise<StartEstimate> {
     // The launcher uses capacity-based availability, not this dry-run estimate.
     return {};

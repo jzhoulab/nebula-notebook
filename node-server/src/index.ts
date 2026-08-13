@@ -46,6 +46,7 @@ import { allocationService } from './scheduler/allocation-service';
 import { SlurmScheduler } from './scheduler/slurm-scheduler';
 import { MockScheduler } from './scheduler/mock-scheduler';
 import type { LaunchContext } from './scheduler/job-template';
+import { archOverridesFromEnv } from './scheduler/arch';
 
 // Import auth
 import { authService, authMiddleware, authWebSocketMiddleware } from './auth';
@@ -591,6 +592,7 @@ async function main(): Promise<void> {
           scriptPath: process.argv[1],
           cwd: process.cwd(),
           stateDir: process.env.NEBULA_SCHEDULER_STATE_DIR || path.join(os.homedir(), '.nebula', 'allocations'),
+          archOverrides: archOverridesFromEnv(),
         };
         allocationService.init(scheduler, ctx);
         console.log('[Scheduler] SLURM detected — compute allocations enabled');

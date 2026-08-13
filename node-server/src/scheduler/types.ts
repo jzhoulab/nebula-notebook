@@ -65,6 +65,9 @@ export interface PartitionLoad {
   gpus?: { type: string; total: number; idle: number }[];
   nodes: { idle: number; mixed: number; alloc: number; down: number; total: number };
   jobs: { pending: number; running: number };
+  /** Distinct CPU arches of the partition's nodes, SLURM spelling (e.g.
+   *  'x86_64', 'aarch64'), sorted. Absent when no node reported one. */
+  archs?: string[];
 }
 
 export interface QosLoad {
@@ -100,6 +103,12 @@ export interface Scheduler {
    * scheduler would reject. Discovered from the scheduler, not configured.
    */
   allowedQos(partition: string): Promise<string[] | null>;
+  /**
+   * The partition's CPU arch as a node process.arch identifier ('x64',
+   * 'arm64'), or null when unknown or mixed — null means "assume the
+   * server's own arch", preserving pre-multi-arch behavior.
+   */
+  partitionArch(partition: string): Promise<string | null>;
   /** Dry-run estimated start time for a spec, without submitting. */
   estimateStart(spec: JobSpec): Promise<StartEstimate>;
   /** Submit a rendered job script; returns the scheduler job id. */

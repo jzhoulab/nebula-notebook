@@ -372,7 +372,9 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
                     {partitions.map((p) => {
                       const lp = loadByName.get(p);
                       const free = lp?.gpus?.length ? `${lp.gpus.reduce((s2, g) => s2 + g.idle, 0)} gpu free` : lp ? `${lp.cpus.idle} cpu free` : '';
-                      return <option key={p} value={p}>{p}{free ? ` — ${free}` : ''}</option>;
+                      // Flag non-x86 queues — their kernels need matching-arch envs.
+                      const arch = lp?.archs?.some((a) => a !== 'x86_64') ? lp!.archs!.join('+') : '';
+                      return <option key={p} value={p}>{p}{free ? ` — ${free}` : ''}{arch ? ` · ${arch}` : ''}</option>;
                     })}
                   </select>
                 </div>

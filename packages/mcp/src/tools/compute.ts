@@ -119,10 +119,14 @@ export const listComputeQueuesTool: Tool<ListComputeQueuesParams, ComputePartiti
     const allowed = new Set(data.associations?.partitions ?? []);
     lines.push('Partitions:');
     for (const p of data.load?.partitions ?? []) {
-      const gpus = p.gpus ? `, GPUs ${p.gpus.idle}/${p.gpus.total} idle (${p.gpus.type})` : '';
+      const gpus = p.gpus?.length
+        ? `, GPUs ${p.gpus.map((g) => `${g.idle}/${g.total} idle (${g.type})`).join(', ')}`
+        : '';
+      // Non-x86 queues need matching-arch runtimes/envs — agents must know.
+      const arch = p.archs?.some((a) => a !== 'x86_64') ? `, arch ${p.archs!.join('+')}` : '';
       const restricted = allowed.size > 0 && !allowed.has(p.name) ? ' [not allowed for you]' : '';
       lines.push(
-        `  - ${p.name}: ${p.up ? 'up' : 'down'}, limit ${p.timeLimit}, CPUs ${p.cpus.idle}/${p.cpus.total} idle${gpus}, backlog ${p.jobs.pending} pending / ${p.jobs.running} running${restricted}`
+        `  - ${p.name}: ${p.up ? 'up' : 'down'}, limit ${p.timeLimit}${arch}, CPUs ${p.cpus.idle}/${p.cpus.total} idle${gpus}, backlog ${p.jobs.pending} pending / ${p.jobs.running} running${restricted}`
       );
     }
     lines.push('QoS:');

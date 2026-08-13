@@ -119,8 +119,12 @@ describe('nebula compute CLI', () => {
     expect(r.code).toBe(0);
     // partitions with idle/total counts
     expect(r.stdout).toContain('PARTITION');
-    expect(r.stdout).toMatch(/cpu\s+up\s+1-00:00:00\s+236\/512/);
-    expect(r.stdout).toMatch(/gpu-a100\s+up\s+\S+\s+22\/96\s+3\/8 \(nvidia_a100_80gb\)/);
+    // The fixture cluster is heterogeneous (armq below), so an ARCH column
+    // appears; partitions whose nodes never reported an arch show '?'.
+    expect(r.stdout).toContain('ARCH');
+    expect(r.stdout).toMatch(/cpu\s+up\s+\?\s+1-00:00:00\s+236\/512/);
+    expect(r.stdout).toMatch(/gpu-a100\s+up\s+\?\s+\S+\s+22\/96\s+3\/8 \(nvidia_a100_80gb\)/);
+    expect(r.stdout).toMatch(/armq\s+up\s+aarch64/);
     // backlog columns
     expect(r.stdout).toContain('PENDING');
     expect(r.stdout).toContain('RUNNING');

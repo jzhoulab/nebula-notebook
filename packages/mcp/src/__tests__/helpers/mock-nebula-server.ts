@@ -266,14 +266,14 @@ export async function startMockNebulaServer(): Promise<MockNebulaServer> {
         {
           name: 'gpu', up: true, timeLimit: '1-00:00:00',
           cpus: { alloc: 82, idle: 46, other: 0, total: 128 },
-          gpus: { type: 'nvidia_l40s', total: 16, idle: 7 },
+          gpus: [{ type: 'nvidia_l40s', total: 16, idle: 7 }],
           nodes: { idle: 1, mixed: 4, alloc: 3, down: 0, total: 4 },
           jobs: { pending: 3, running: 12 },
         },
         {
           name: 'gpu-a100', up: true, timeLimit: '1-00:00:00',
           cpus: { alloc: 74, idle: 22, other: 0, total: 96 },
-          gpus: { type: 'nvidia_a100_80gb', total: 8, idle: 3 },
+          gpus: [{ type: 'nvidia_a100_80gb', total: 8, idle: 3 }],
           nodes: { idle: 1, mixed: 4, alloc: 3, down: 0, total: 3 },
           jobs: { pending: 6, running: 9 },
         },
@@ -282,6 +282,13 @@ export async function startMockNebulaServer(): Promise<MockNebulaServer> {
           cpus: { alloc: 88, idle: 104, other: 0, total: 192 },
           nodes: { idle: 3, mixed: 4, alloc: 3, down: 0, total: 6 },
           jobs: { pending: 1, running: 6 },
+        },
+        {
+          name: 'armq', up: true, timeLimit: '7-00:00:00',
+          cpus: { alloc: 0, idle: 576, other: 0, total: 576 },
+          nodes: { idle: 8, mixed: 0, alloc: 0, down: 0, total: 8 },
+          jobs: { pending: 0, running: 0 },
+          archs: ['aarch64'],
         },
       ],
       qoses: [
@@ -849,7 +856,7 @@ export async function startMockNebulaServer(): Promise<MockNebulaServer> {
           enabled: true,
           associations: {
             account: 'demo-lab',
-            partitions: ['cpu', 'gpu', 'gpu-a100', 'bigmem'],
+            partitions: ['cpu', 'gpu', 'gpu-a100', 'bigmem', 'armq'],
             qoses: ['normal', 'priority', 'opportunistic'],
             defaultQos: 'normal',
           },

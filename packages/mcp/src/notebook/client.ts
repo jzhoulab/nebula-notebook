@@ -196,9 +196,12 @@ export interface ComputePartitionLoad {
   up: boolean;
   timeLimit: string;
   cpus: { alloc: number; idle: number; other: number; total: number };
-  gpus?: { type: string; total: number; idle: number };
+  /** One entry per GPU model in the partition (heterogeneous queues have several). */
+  gpus?: { type: string; total: number; idle: number }[];
   nodes: { idle: number; mixed: number; alloc: number; down: number; total: number };
   jobs: { pending: number; running: number };
+  /** Distinct CPU arches of the partition's nodes (e.g. 'x86_64', 'aarch64'). */
+  archs?: string[];
 }
 
 export interface ComputeQosLoad {

@@ -14,6 +14,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Scheduler, JobSpec } from './types';
 import { renderJobScript, type LaunchContext } from './job-template';
+import { pickLaunchContext } from './arch';
+import { summarizeLogTail } from './util';
 import { serverRegistry } from '../cluster/server-registry';
 
 export type AllocationState =
@@ -46,7 +48,7 @@ const POLL_STEADY_MS = 30_000; // all tracked allocations active + correlated
 const POLL_IDLE_MS = 60_000;   // nothing non-terminal to watch
 const TERMINAL: AllocationState[] = ['ended', 'failed', 'cancelled'];
 
-class AllocationService {
+export class AllocationService {
   private scheduler: Scheduler | null = null;
   private ctx: LaunchContext | null = null;
   private allocations = new Map<string, Allocation>();
@@ -183,7 +185,18 @@ class AllocationService {
     const token = randomUUID();
     const alloc: Allocation = { id, token, spec, state: 'pending', createdAt: Date.now() };
 
-    const script = renderJobScript(spec, this.ctx, id, token);
+    // Cross-arch partitions (aarch64 queues under an x86_64 server) launch a
+    // per-arch runtime — or refuse HERE, actionably, instead of letting the
+    // job die on the node with "Exec format error" in an unread log.
+    let targetArch: string | null = null;
+    try {
+      targetArch = await this.scheduler.partitionArch(spec.partition);
+    } catch {
+      targetArch = null;
+    }
+    const launchCtx = pickLaunchContext(this.ctx, targetArch, this.ctx.serverArch);
+
+    const script = renderJobScript(spec, launchCtx, id, token);
     const scriptPath = path.join(this.ctx.stateDir, `${id}.sh`);
     fs.writeFileSync(scriptPath, script, { mode: 0o700 });
 
@@ -255,12 +268,38 @@ class AllocationService {
       } else if (['completed', 'cancelled', 'failed'].includes(status.state)) {
         alloc.state = status.state === 'failed' ? 'failed' : status.state === 'cancelled' ? 'cancelled' : 'ended';
         alloc.reason = status.reason;
+        // A failure (or an exit that never registered) explains itself in the
+        // job log; the scheduler's reason alone ("NonZeroExitCode") does not.
+        if (alloc.state === 'failed' || (alloc.state === 'ended' && !alloc.serverId)) {
+          const tail = this.readLogTail(alloc.id);
+          if (tail) alloc.reason = [status.reason, tail].filter(Boolean).join(' — ');
+        }
         dirty = true;
         if (alloc.serverId) serverRegistry.unregister(alloc.serverId);
         console.log(`[Scheduler] Allocation ${alloc.id} ${alloc.state} (job ${alloc.jobId})`);
       }
     }
     if (dirty) this.persist();
+  }
+
+  /** Last few lines of an allocation's job log (bounded read), or null. */
+  private readLogTail(allocId: string): string | null {
+    if (!this.ctx) return null;
+    const file = path.join(this.ctx.stateDir, `${allocId}.log`);
+    try {
+      const size = fs.statSync(file).size;
+      const fd = fs.openSync(file, 'r');
+      try {
+        const want = Math.min(size, 4096);
+        const buf = Buffer.alloc(want);
+        fs.readSync(fd, buf, 0, want, size - want);
+        return summarizeLogTail(buf.toString('utf-8'));
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return null;
+    }
   }
 
   shutdown(): void {

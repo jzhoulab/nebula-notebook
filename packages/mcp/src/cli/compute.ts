@@ -165,16 +165,20 @@ async function computeQueues(argv: string[]): Promise<number> {
 
   const allowed = new Set(data.associations?.partitions ?? []);
   const partitions = data.load?.partitions ?? [];
+  // Only surface an ARCH column on heterogeneous clusters — kernels (and the
+  // allocation client) only run on partitions matching an installed runtime.
+  const showArch = partitions.some((p) => p.archs?.some((a) => a !== 'x86_64'));
   const rows: string[][] = [
-    ['PARTITION', 'STATE', 'TIMELIMIT', 'CPUS idle/tot', 'GPUS idle/tot (type)', 'PENDING', 'RUNNING'],
+    ['PARTITION', 'STATE', ...(showArch ? ['ARCH'] : []), 'TIMELIMIT', 'CPUS idle/tot', 'GPUS idle/tot (type)', 'PENDING', 'RUNNING'],
   ];
   for (const p of partitions) {
     rows.push([
       p.name + (allowed.size > 0 && !allowed.has(p.name) ? ' *' : ''),
       p.up ? 'up' : 'down',
+      ...(showArch ? [p.archs?.join('+') ?? '?'] : []),
       p.timeLimit,
       `${p.cpus.idle}/${p.cpus.total}`,
-      p.gpus ? `${p.gpus.idle}/${p.gpus.total} (${p.gpus.type})` : '-',
+      p.gpus?.length ? p.gpus.map((g) => `${g.idle}/${g.total} (${g.type})`).join(', ') : '-',
       String(p.jobs.pending),
       String(p.jobs.running),
     ]);
