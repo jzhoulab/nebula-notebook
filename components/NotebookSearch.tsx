@@ -23,6 +23,7 @@ export interface CurrentMatch {
 interface Props {
   cells: Cell[];
   isOpen: boolean;
+  readOnly?: boolean;
   onClose: () => void;
   onNavigateToCell: (cellIndex: number, cellId: string) => void;
   getCursorAnchor?: () => { cellId: string; pos: number; ts: number } | null;
@@ -37,6 +38,7 @@ interface Props {
 export const NotebookSearch: React.FC<Props> = ({
   cells,
   isOpen,
+  readOnly = false,
   onClose,
   onNavigateToCell,
   getCursorAnchor,
@@ -326,7 +328,7 @@ export const NotebookSearch: React.FC<Props> = ({
   // Replace current match, then advance to the next match past the
   // replacement (handled when matches recompute — see the search effect)
   const handleReplace = useCallback(() => {
-    if (matches.length === 0 || !onReplace) return;
+    if (readOnly || matches.length === 0 || !onReplace) return;
 
     const match = matches[currentMatchIndex];
     pendingReplaceAnchorRef.current = {
@@ -339,11 +341,11 @@ export const NotebookSearch: React.FC<Props> = ({
     requestAnimationFrame(() => {
       searchInputRef.current?.focus();
     });
-  }, [matches, currentMatchIndex, replaceText, onReplace]);
+  }, [readOnly, matches, currentMatchIndex, replaceText, onReplace]);
 
   // Replace all in current cell
   const handleReplaceAllInCell = useCallback(() => {
-    if (matches.length === 0 || !onReplaceAllInCell) return;
+    if (readOnly || matches.length === 0 || !onReplaceAllInCell) return;
 
     const currentCellId = matches[currentMatchIndex]?.cellId;
     if (currentCellId) {
@@ -355,11 +357,11 @@ export const NotebookSearch: React.FC<Props> = ({
     requestAnimationFrame(() => {
       searchInputRef.current?.focus();
     });
-  }, [matches, currentMatchIndex, effectiveQuery, replaceText, caseSensitive, effectiveUseRegex, onReplaceAllInCell]);
+  }, [readOnly, matches, currentMatchIndex, effectiveQuery, replaceText, caseSensitive, effectiveUseRegex, onReplaceAllInCell]);
 
   // Replace all in notebook
   const handleReplaceAllInNotebook = useCallback(() => {
-    if (!query || !onReplaceAllInNotebook) return;
+    if (readOnly || !query || !onReplaceAllInNotebook) return;
 
     onReplaceAllInNotebook(effectiveQuery, replaceText, caseSensitive, effectiveUseRegex);
     setShowReplaceAllMenu(false);
@@ -368,7 +370,7 @@ export const NotebookSearch: React.FC<Props> = ({
     requestAnimationFrame(() => {
       searchInputRef.current?.focus();
     });
-  }, [query, effectiveQuery, replaceText, caseSensitive, effectiveUseRegex, onReplaceAllInNotebook]);
+  }, [readOnly, query, effectiveQuery, replaceText, caseSensitive, effectiveUseRegex, onReplaceAllInNotebook]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -467,13 +469,15 @@ export const NotebookSearch: React.FC<Props> = ({
           .*
         </button>
 
-        <button
-          onClick={() => setShowReplace(!showReplace)}
-          className={`p-1 rounded ${showReplace ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:bg-slate-100'}`}
-          title="Toggle replace"
-        >
-          <Replace className="w-4 h-4" />
-        </button>
+        {!readOnly && (
+          <button
+            onClick={() => setShowReplace(!showReplace)}
+            className={`p-1 rounded ${showReplace ? 'bg-blue-100 text-blue-700' : 'text-slate-400 hover:bg-slate-100'}`}
+            title="Toggle replace"
+          >
+            <Replace className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           onClick={onClose}
@@ -485,7 +489,7 @@ export const NotebookSearch: React.FC<Props> = ({
       </div>
 
       {/* Replace row */}
-      {showReplace && (
+      {!readOnly && showReplace && (
         <div className="flex items-center gap-2 pl-6">
           <input
             ref={replaceInputRef}

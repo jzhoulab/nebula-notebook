@@ -163,6 +163,7 @@ const CellComponent: React.FC<Props> = ({
   const onReorderRef = useRef(onReorder);
   const cellIdRef = useRef(cell.id);
   const cellContentRef = useRef(cell.content);
+  const isLockedRef = useRef(isLocked);
 
   useEffect(() => {
     onRunRef.current = onRun;
@@ -177,6 +178,7 @@ const CellComponent: React.FC<Props> = ({
     onReorderRef.current = onReorder;
     cellIdRef.current = cell.id;
     cellContentRef.current = cell.content;
+    isLockedRef.current = isLocked;
   });
 
   // Ref to cell container for focusing in command mode
@@ -208,10 +210,12 @@ const CellComponent: React.FC<Props> = ({
   // ⚠️ CRITICAL: These callbacks MUST be stable (empty deps) to prevent CodeEditor
   // from rebuilding extensions on every render. Use refs to access current values.
   const handleShiftEnter = useCallback(() => {
+    if (isLockedRef.current) return;
     onRunAndAdvanceRef.current(cellIdRef.current, 'editor');
   }, []);
 
   const handleModEnter = useCallback(() => {
+    if (isLockedRef.current) return;
     onRunRef.current(cellIdRef.current);
   }, []);
 
@@ -225,6 +229,7 @@ const CellComponent: React.FC<Props> = ({
   }, []);
 
   const handleEditorSave = useCallback(() => {
+    if (isLockedRef.current) return;
     onSaveRef.current?.();
   }, []);
 
@@ -240,6 +245,7 @@ const CellComponent: React.FC<Props> = ({
 
   // Stable onChange handler for CodeEditor
   const handleEditorChange = useCallback((value: string) => {
+    if (isLockedRef.current) return;
     onUpdateRef.current(cellIdRef.current, value);
   }, []);
 
@@ -250,7 +256,7 @@ const CellComponent: React.FC<Props> = ({
   const handleEditorBlur = useCallback(() => {
     setFocusState('none');
     // Flush pending content on blur (keyframe for undo history)
-    if (onFlushRef.current) {
+    if (!isLockedRef.current && onFlushRef.current) {
       onFlushRef.current(cellIdRef.current, cellContentRef.current);
     }
     // Focus cell div if requested (e.g., after Escape key) to enter command mode
@@ -293,6 +299,7 @@ const CellComponent: React.FC<Props> = ({
   };
 
   const handleAgentPrompt = () => {
+    if (isLocked) return;
     const prompt = aiPrompt.trim();
     if (!prompt) return;
     const result = agentTerminalService.sendCellPrompt({
@@ -308,6 +315,7 @@ const CellComponent: React.FC<Props> = ({
   };
 
   const handleAgentFix = () => {
+    if (isLocked) return;
     const errorOutput = cell.outputs.find(o => o.type === 'error' || o.type === 'stderr');
     if (!errorOutput) return;
     const result = agentTerminalService.sendFixPrompt({
@@ -494,6 +502,7 @@ const CellComponent: React.FC<Props> = ({
     // Shift+Enter: run and advance (stay in cell mode)
     if (e.key === 'Enter' && e.shiftKey) {
       e.preventDefault();
+      if (isLocked) return;
       onRunAndAdvanceRef.current(cell.id, 'cell');
       return;
     }
@@ -501,6 +510,7 @@ const CellComponent: React.FC<Props> = ({
     // Ctrl/Cmd+Enter: run cell
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
+      if (isLocked) return;
       onRunRef.current(cell.id);
       return;
     }
@@ -613,18 +623,20 @@ const CellComponent: React.FC<Props> = ({
             </span>
           ) : null}
           <button
-            onClick={(e) => { e.stopPropagation(); onRun(cell.id); }}
-            className="p-1 text-slate-500 hover:text-green-600 hover:bg-green-50 rounded"
-            title="Run Cell (Shift+Enter or Ctrl+Enter)"
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) onRun(cell.id); }}
+            disabled={isLocked}
+            className={`p-1 rounded ${isLocked ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500 hover:text-green-600 hover:bg-green-50'}`}
+            title={isLocked ? 'Read-only notebook' : 'Run Cell (Shift+Enter or Ctrl+Enter)'}
           >
             {cell.isExecuting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
           </button>
 
           {/* Action buttons after Run */}
           <button
-            onClick={(e) => { e.stopPropagation(); setIsAiOpen(!isAiOpen); }}
-            className={`p-1 rounded transition-colors ${isAiOpen ? 'text-purple-600 bg-purple-50' : 'text-slate-400 hover:text-purple-600 hover:bg-purple-50'}`}
-            title="AI Assistant"
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) setIsAiOpen(!isAiOpen); }}
+            disabled={isLocked}
+            className={`p-1 rounded transition-colors ${isLocked ? 'text-slate-300 cursor-not-allowed' : isAiOpen ? 'text-purple-600 bg-purple-50' : 'text-slate-400 hover:text-purple-600 hover:bg-purple-50'}`}
+            title={isLocked ? 'Read-only notebook: agent editing disabled' : 'AI Assistant'}
           >
             <Bot className="w-3.5 h-3.5" />
           </button>
@@ -632,7 +644,7 @@ const CellComponent: React.FC<Props> = ({
             onClick={(e) => { e.stopPropagation(); if (!isLocked) onMove(cell.id, 'up'); }}
             disabled={isLocked}
             className={`p-1 text-slate-400 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLocked ? 'cursor-not-allowed opacity-50' : 'hover:text-slate-700 hover:bg-slate-100'}`}
-            title={isLocked ? 'Locked during agent session' : 'Move Up'}
+            title={isLocked ? 'Read-only notebook: cannot move cell' : 'Move Up'}
           >
             <ArrowUp className="w-3.5 h-3.5" />
           </button>
@@ -640,7 +652,7 @@ const CellComponent: React.FC<Props> = ({
             onClick={(e) => { e.stopPropagation(); if (!isLocked) onMove(cell.id, 'down'); }}
             disabled={isLocked}
             className={`p-1 text-slate-400 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLocked ? 'cursor-not-allowed opacity-50' : 'hover:text-slate-700 hover:bg-slate-100'}`}
-            title={isLocked ? 'Locked during agent session' : 'Move Down'}
+            title={isLocked ? 'Read-only notebook: cannot move cell' : 'Move Down'}
           >
             <ArrowDown className="w-3.5 h-3.5" />
           </button>
@@ -648,7 +660,7 @@ const CellComponent: React.FC<Props> = ({
             onClick={(e) => { e.stopPropagation(); if (!isLocked) onDelete(cell.id); }}
             disabled={isLocked}
             className={`p-1 text-slate-400 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLocked ? 'cursor-not-allowed opacity-50' : 'hover:text-red-600 hover:bg-red-50'}`}
-            title={isLocked ? 'Locked during agent session' : 'Delete Cell'}
+            title={isLocked ? 'Read-only notebook: cannot delete cell' : 'Delete Cell'}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -656,7 +668,7 @@ const CellComponent: React.FC<Props> = ({
             onClick={(e) => { e.stopPropagation(); if (!isLocked) { const idx = cellIndexMapRef.current?.get(cell.id) ?? -1; if (idx >= 0) onAddCell(idx); } }}
             disabled={isLocked}
             className={`p-1 text-slate-400 rounded opacity-0 group-hover:opacity-100 transition-opacity ${isLocked ? 'cursor-not-allowed opacity-50' : 'hover:text-blue-600 hover:bg-blue-50'}`}
-            title={isLocked ? 'Locked during agent session' : 'Add Cell Below'}
+            title={isLocked ? 'Read-only notebook: cannot add cell' : 'Add Cell Below'}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -666,7 +678,8 @@ const CellComponent: React.FC<Props> = ({
         <div className="flex-1 flex justify-center">
           {hasError && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleAgentFix(); }}
+              onClick={(e) => { e.stopPropagation(); if (!isLocked) handleAgentFix(); }}
+              disabled={isLocked}
               className="flex items-center gap-1 text-[0.625rem] px-2 py-0.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors"
               title="Send this cell's error to the agent (Claude Code / Codex) to fix"
             >
@@ -679,14 +692,18 @@ const CellComponent: React.FC<Props> = ({
         {/* Right: Cell type toggle */}
         <div className="flex gap-0.5">
           <button
-            onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'code'); }}
-            className={`text-[0.625rem] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${cell.type === 'code' ? 'bg-white shadow-sm text-slate-800 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) onChangeType(cell.id, 'code'); }}
+            disabled={isLocked}
+            title={isLocked ? 'Read-only notebook: cannot change cell type' : 'Change to code'}
+            className={`text-[0.625rem] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${isLocked ? 'cursor-not-allowed text-slate-300' : cell.type === 'code' ? 'bg-white shadow-sm text-slate-800 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <CodeIcon className="w-3 h-3" /> Code
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'markdown'); }}
-            className={`text-[0.625rem] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${cell.type === 'markdown' ? 'bg-white shadow-sm text-slate-800 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
+            onClick={(e) => { e.stopPropagation(); if (!isLocked) onChangeType(cell.id, 'markdown'); }}
+            disabled={isLocked}
+            title={isLocked ? 'Read-only notebook: cannot change cell type' : 'Change to markdown'}
+            className={`text-[0.625rem] px-1.5 py-0.5 rounded flex items-center gap-0.5 ${isLocked ? 'cursor-not-allowed text-slate-300' : cell.type === 'markdown' ? 'bg-white shadow-sm text-slate-800 font-medium' : 'text-slate-400 hover:text-slate-600'}`}
           >
             <FileText className="w-3 h-3" /> Text
           </button>

@@ -544,13 +544,15 @@ describe('FilesystemService', () => {
       const codeCell = saved.cells[0];
       expect(codeCell.cell_type).toBe('code');
       expect(codeCell.source).toEqual(['print("hello")']);
-      expect(codeCell.metadata.nebula_id).toBe('cell-1');
+      expect(codeCell.id).toBe('cell-1');
+      expect(codeCell.metadata.nebula_id).toBeUndefined();
       expect(codeCell.metadata.scrolled).toBe(true);
       expect(codeCell.execution_count).toBe(1);
       expect(codeCell.outputs[0].nebula_seq).toBeUndefined();
 
       // Check markdown cell
       const mdCell = saved.cells[1];
+      expect(mdCell.id).toBe('cell-2');
       expect(mdCell.cell_type).toBe('markdown');
       expect(mdCell.source).toEqual(['# Title']);
     });

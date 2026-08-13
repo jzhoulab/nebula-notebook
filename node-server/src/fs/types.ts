@@ -113,8 +113,8 @@ export interface SaveNotebookResult {
 /**
  * Sentinel the client puts in place of a code cell's outputs when they are
  * unchanged since its last successful save. The server re-uses the outputs
- * already in the file (matched by nebula_id), so autosaves don't re-upload
- * megabytes of unchanged base64 images over slow uplinks.
+ * already in the file (matched by canonical Jupyter cell ID), so autosaves
+ * don't re-upload megabytes of unchanged base64 images over slow uplinks.
  */
 export const OUTPUTS_UNCHANGED_SENTINEL = '__nebula-outputs-unchanged-v1__';
 
@@ -127,6 +127,8 @@ export interface JupyterCellMetadata {
 }
 
 export interface JupyterCell {
+  /** Stable nbformat 4.5 cell identifier. Older notebooks may omit it. */
+  id?: string;
   cell_type: 'code' | 'markdown' | 'raw';
   source: string | string[];
   metadata: JupyterCellMetadata;

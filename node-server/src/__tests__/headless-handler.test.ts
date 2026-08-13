@@ -106,8 +106,8 @@ describe('HeadlessOperationHandler', () => {
       // Flush to persist changes before reading file
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
-      expect(saved.cells[0].metadata.nebula_id).toBe('new-cell');
-      expect(saved.cells[1].metadata.nebula_id).toBe('existing-cell');
+      expect(saved.cells[0].id).toBe('new-cell');
+      expect(saved.cells[1].id).toBe('existing-cell');
     });
 
     it('should insert a cell at the end', async () => {
@@ -128,7 +128,7 @@ describe('HeadlessOperationHandler', () => {
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
       expect(saved.cells).toHaveLength(2);
-      expect(saved.cells[1].metadata.nebula_id).toBe('new-cell');
+      expect(saved.cells[1].id).toBe('new-cell');
       expect(saved.cells[1].cell_type).toBe('markdown');
     });
 
@@ -150,9 +150,9 @@ describe('HeadlessOperationHandler', () => {
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
       expect(saved.cells).toHaveLength(3);
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-1');
-      expect(saved.cells[1].metadata.nebula_id).toBe('middle-cell');
-      expect(saved.cells[2].metadata.nebula_id).toBe('cell-2');
+      expect(saved.cells[0].id).toBe('cell-1');
+      expect(saved.cells[1].id).toBe('middle-cell');
+      expect(saved.cells[2].id).toBe('cell-2');
     });
 
     it('should preserve scrolled metadata on insert', async () => {
@@ -201,8 +201,8 @@ describe('HeadlessOperationHandler', () => {
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
       expect(saved.cells).toHaveLength(2);
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-1');
-      expect(saved.cells[1].metadata.nebula_id).toBe('cell-3');
+      expect(saved.cells[0].id).toBe('cell-1');
+      expect(saved.cells[1].id).toBe('cell-3');
     });
 
     it('should return error for non-existent cell', async () => {
@@ -331,7 +331,7 @@ describe('HeadlessOperationHandler', () => {
 
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-2-2');
+      expect(saved.cells[0].id).toBe('cell-2-2');
     });
   });
 
@@ -354,9 +354,9 @@ describe('HeadlessOperationHandler', () => {
 
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-2');
-      expect(saved.cells[1].metadata.nebula_id).toBe('cell-3');
-      expect(saved.cells[2].metadata.nebula_id).toBe('cell-1');
+      expect(saved.cells[0].id).toBe('cell-2');
+      expect(saved.cells[1].id).toBe('cell-3');
+      expect(saved.cells[2].id).toBe('cell-1');
     });
 
     it('should move cell to beginning', async () => {
@@ -377,9 +377,9 @@ describe('HeadlessOperationHandler', () => {
 
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-3');
-      expect(saved.cells[1].metadata.nebula_id).toBe('cell-1');
-      expect(saved.cells[2].metadata.nebula_id).toBe('cell-2');
+      expect(saved.cells[0].id).toBe('cell-3');
+      expect(saved.cells[1].id).toBe('cell-1');
+      expect(saved.cells[2].id).toBe('cell-2');
     });
   });
 
@@ -422,7 +422,7 @@ describe('HeadlessOperationHandler', () => {
 
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
-      const newCell = saved.cells.find((cell: any) => cell.metadata.nebula_id === result.cellId);
+      const newCell = saved.cells.find((cell: any) => cell.id === result.cellId);
       expect(newCell).toBeDefined();
       expect(newCell.metadata.scrolled).toBeUndefined();
       expect(newCell.metadata.custom).toBeUndefined();
@@ -509,8 +509,8 @@ describe('HeadlessOperationHandler', () => {
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
       expect(saved.cells).toHaveLength(2);
-      expect(saved.cells[0].metadata.nebula_id).toBe('cell-1');
-      expect(saved.cells[1].metadata.nebula_id).toBe('cell-3');
+      expect(saved.cells[0].id).toBe('cell-1');
+      expect(saved.cells[1].id).toBe('cell-3');
     });
   });
 
@@ -536,9 +536,9 @@ describe('HeadlessOperationHandler', () => {
       await handler.flush(notebookPath);
       const saved = JSON.parse(fs.readFileSync(notebookPath, 'utf-8'));
       expect(saved.cells).toHaveLength(3);
-      expect(saved.cells[0].metadata.nebula_id).toBe('new-1');
-      expect(saved.cells[1].metadata.nebula_id).toBe('new-2');
-      expect(saved.cells[2].metadata.nebula_id).toBe('existing');
+      expect(saved.cells[0].id).toBe('new-1');
+      expect(saved.cells[1].id).toBe('new-2');
+      expect(saved.cells[2].id).toBe('existing');
     });
   });
 

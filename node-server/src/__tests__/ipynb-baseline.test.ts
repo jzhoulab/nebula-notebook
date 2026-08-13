@@ -108,7 +108,8 @@ describe('ipynb serialization baseline (must never change)', () => {
     expect(parsed.nbformat).toBe(4);
     expect(parsed.nbformat_minor).toBe(5);
     expect(parsed.cells).toHaveLength(3);
-    expect(parsed.cells[0].metadata.nebula_id).toBe('abc123');
+    expect(parsed.cells[0].id).toBe('abc123');
+    expect(parsed.cells[0].metadata.nebula_id).toBeUndefined();
     expect(parsed.cells[2].metadata.scrolled).toBe(true);
     expect(parsed.cells[2].metadata.custom_key).toEqual({ nested: true });
     expect(parsed.metadata.kernelspec.name).toBe('python3');

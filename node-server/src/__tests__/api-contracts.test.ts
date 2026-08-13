@@ -255,6 +255,19 @@ describe('API Contract Tests - Snake Case Response Format', () => {
       expect(body).not.toHaveProperty('sessionId');
       expect(body).not.toHaveProperty('kernelName');
     });
+
+    it('rejects starting a kernel for a sealed notebook before provisioning', async () => {
+      const sealedPath = '/tmp/work/.nebula/seals/seal-kernel/notebook.ipynb';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/kernels/start',
+        payload: { kernel_name: 'python3', file_path: sealedPath },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ code: 'sealed_read_only', seal_id: 'seal-kernel' });
+      expect(kernelService.startKernel).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /api/kernels/for-file response', () => {
@@ -276,6 +289,19 @@ describe('API Contract Tests - Snake Case Response Format', () => {
       expect(body).not.toHaveProperty('sessionId');
       expect(body).not.toHaveProperty('kernelName');
       expect(body).not.toHaveProperty('filePath');
+    });
+
+    it('rejects creating a kernel for sealed evidence before provisioning', async () => {
+      const sealedPath = '/tmp/work/.nebula/seals/seal-kernel/notebook.ipynb';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/kernels/for-file',
+        payload: { file_path: sealedPath, kernel_name: 'python3' },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.json()).toMatchObject({ code: 'sealed_read_only', seal_id: 'seal-kernel' });
+      expect(kernelService.getOrCreateKernel).not.toHaveBeenCalled();
     });
   });
 });

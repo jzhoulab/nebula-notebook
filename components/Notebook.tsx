@@ -10,7 +10,7 @@ import { setAutocompleteContext, isAiCompletionInFlight } from '../services/aiAu
 import ComputeAllocationModal from './ComputeAllocationModal';
 import { getSettings, saveSettings, IndentationPreference } from '../services/settingsService';
 import { markOnboardingStep } from '../services/onboardingService';
-import { Plus, Play, Save, Menu, ChevronDown, RotateCw, Power, Sparkles, Undo2, Redo2, Settings, Square, Cloud, CloudOff, Loader2, Check, AlertCircle, RefreshCw, Download, Cpu, Keyboard, X, CheckCircle, XCircle, Layers, Bot, Shield, ShieldCheck, ShieldOff, Terminal, History, MemoryStick, Server, Clock, Maximize2, Minimize2, FileText, FolderOpen, ScrollText } from 'lucide-react';
+import { Plus, Play, Save, Menu, ChevronDown, RotateCw, Power, Sparkles, Undo2, Redo2, Settings, Square, Cloud, CloudOff, Loader2, Check, AlertCircle, RefreshCw, Download, Cpu, Keyboard, X, CheckCircle, XCircle, Layers, Bot, Shield, ShieldCheck, ShieldOff, Terminal, History, MemoryStick, Server, Clock, Maximize2, Minimize2, FileText, FolderOpen, ScrollText, LockKeyhole } from 'lucide-react';
 import { CellListHandle } from './VirtualCellList';
 import { EditorView } from '@codemirror/view';
 import {
@@ -34,6 +34,8 @@ import {
   OutputLoggingMode,
   seedOutputsBaseline,
   setActiveNotebookPath,
+  NotebookAccess,
+  downloadFile,
 } from '../services/fileService';
 import { peekWidgetStateSnapshot } from '../services/widgetManager';
 import { listAllocations } from '../services/computeService';
@@ -315,6 +317,18 @@ function getInitialFileId(): string | null {
   return getActiveFileId();
 }
 
+function getEvidenceLinkForFile(filePath: string): { sealId?: string; cellId?: string } {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('file') !== filePath) return {};
+  const sealId = url.searchParams.get('seal') || undefined;
+  const cellId = url.searchParams.get('cell') || undefined;
+  return { sealId, cellId };
+}
+
+function encodeReadablePath(filePath: string): string {
+  return encodeURIComponent(filePath).replace(/%2F/gi, '/');
+}
+
 // Format elapsed time in a compact form (e.g., "1.2s", "1m 23s")
 // Leaf component so the 100ms execution tick re-renders ONLY this span —
 // as top-level Notebook state it re-rendered the entire 5.7k-line tree
@@ -371,6 +385,9 @@ export const Notebook: React.FC = () => {
   const [files, setFiles] = useState<NotebookMetadata[]>([]);
   const [currentFileId, setCurrentFileId] = useState<string | null>(getInitialFileId);
   const [isLoadingFile, setIsLoadingFile] = useState(!!getInitialFileId());
+  const [notebookAccess, setNotebookAccess] = useState<NotebookAccess>({ read_only: false });
+  const isSealedReadOnly = notebookAccess.read_only && notebookAccess.reason === 'sealed';
+  const evidenceCellHintRef = useRef<string | null>(null);
   const [currentFileMetadata, setCurrentFileMetadata] = useState<NotebookMetadata | null>(null);
   const [isFileBrowserOpen, setIsFileBrowserOpen] = useState(false);
   const [textEditorPath, setTextEditorPath] = useState<string | null>(null);
@@ -414,6 +431,13 @@ export const Notebook: React.FC = () => {
   // Notebook rename state
   const [isRenamingNotebook, setIsRenamingNotebook] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  useEffect(() => {
+    if (!isSealedReadOnly) return;
+    setIsTerminalOpen(false);
+    setPreviewTimestamp(null);
+    setRestoreDialogTimestamp(null);
+    setIsRenamingNotebook(false);
+  }, [isSealedReadOnly]);
 
   // Conflict detection state
   // IMPORTANT: The ref is the source of truth for mtime during save operations.
@@ -1566,6 +1590,7 @@ export const Notebook: React.FC = () => {
 
   // Autosave hook with conflict detection
   const performSaveToFile = useCallback(async (fileId: string, cellsToSave: Cell[]) => {
+    if (isSealedReadOnly) return;
     try {
       // Get history to save alongside notebook
       // IMPORTANT: Skip history if not ready to prevent overwriting persisted history
@@ -1625,7 +1650,7 @@ export const Notebook: React.FC = () => {
       setPendingSave(true);
       throw error; // Re-throw so autosave knows it failed
     }
-  }, [historyReady, getFullHistory, currentKernel, saveWithCheck, getUnflushedState, kernelSessionId, currentFileId, adoptServerMtime]);
+  }, [isSealedReadOnly, historyReady, getFullHistory, currentKernel, saveWithCheck, getUnflushedState, kernelSessionId, currentFileId, adoptServerMtime]);
 
   // Surface save failures loudly — silent autosave loss is the scariest failure
   // mode a notebook can have. Retries are automatic; toast on the first failure
@@ -1646,7 +1671,7 @@ export const Notebook: React.FC = () => {
     // Avoid repeated conflict checks / log spam while the conflict modal is
     // open OR while a resolution's force-save is still in flight (resuming
     // early would re-detect the same conflict against the stale mtime).
-    enabled: !conflictDialog?.show && !conflictResolving,
+    enabled: !isSealedReadOnly && !conflictDialog?.show && !conflictResolving,
     hasRedoHistory: canRedo, // Block autosave when redo history exists
     onSaveError: handleAutosaveError,
   });
@@ -2113,9 +2138,17 @@ export const Notebook: React.FC = () => {
       const filename = stripNotebookExtension(getFilenameFromPath(currentFileId));
       document.title = `${filename} - Nebula Notebook`;
 
-      // Update URL - don't encode slashes for readability
+      // Keep verified evidence coordinates in the URL. The visual/read-only
+      // state still comes exclusively from the server's access classification.
       const baseUrl = window.location.pathname;
-      window.history.replaceState({}, '', `${baseUrl}?file=${currentFileId}`);
+      let nextUrl = `${baseUrl}?file=${encodeReadablePath(currentFileId)}`;
+      if (isSealedReadOnly) {
+        nextUrl += `&mode=sealed&seal=${encodeURIComponent(notebookAccess.seal_id)}`;
+        if (evidenceCellHintRef.current) {
+          nextUrl += `&cell=${encodeURIComponent(evidenceCellHintRef.current)}`;
+        }
+      }
+      window.history.replaceState({}, '', nextUrl);
 
       // Update favicon with notebook-specific avatar
       const avatarUrl = getNotebookAvatar(currentFileId);
@@ -2125,7 +2158,7 @@ export const Notebook: React.FC = () => {
       window.history.replaceState({}, '', window.location.pathname);
       resetFavicon();
     }
-  }, [currentFileId]);
+  }, [currentFileId, isSealedReadOnly, notebookAccess]);
 
   // Refs for functions used in keyboard handler (defined later in component)
   const deleteCellRef = useRef<((id: string) => void) | null>(null);
@@ -2256,6 +2289,7 @@ export const Notebook: React.FC = () => {
   // (first slice of the Notebook decomposition; deps re-snapshot every render
   // so the single capture-phase listener never reads stale closures).
   useNotebookKeyboardShortcuts({
+    readOnly: isSealedReadOnly,
     cellsRef, selectedCellIdsRef, selectionAnchorRef, cursorAnchorRef,
     cellClipboardRef, cellQueueRef, jupyterShortcutsRef,
     handleManualSaveRef, addCellRef, deleteCellRef, changeCellTypeRef,
@@ -2295,14 +2329,14 @@ export const Notebook: React.FC = () => {
 
   // Start renaming the notebook
   const startRenameNotebook = () => {
-    if (!currentFileId) return;
+    if (!currentFileId || isSealedReadOnly) return;
     setRenameValue(currentFilename);
     setIsRenamingNotebook(true);
   };
 
   // Finish renaming the notebook
   const finishRenameNotebook = async () => {
-    if (!currentFileId || !renameValue.trim()) {
+    if (isSealedReadOnly || !currentFileId || !renameValue.trim()) {
       setIsRenamingNotebook(false);
       return;
     }
@@ -2344,6 +2378,8 @@ export const Notebook: React.FC = () => {
     content: Cell[],
     notebookKernel?: string,
     requestedId?: string,
+    access: NotebookAccess = { read_only: false },
+    requestedCellId?: string,
   ) => {
     const sameFileAliases = new Set([id, requestedId].filter((value): value is string => Boolean(value)));
     if (currentFileId && !sameFileAliases.has(currentFileId)) {
@@ -2392,13 +2428,23 @@ export const Notebook: React.FC = () => {
 
     // Set UI state immediately - don't block on history loading
     setCurrentFileId(id);
+    setNotebookAccess(access);
     saveActiveFileId(id);
 
     // Track in recently opened notebooks
     const fileName = stripNotebookExtension(id.split('/').pop() || '') || id;
     addRecentNotebook(id, fileName);
-    setActiveCellId(content.length > 0 ? content[0].id : null);
+    const evidenceTarget = access.read_only && requestedCellId
+      ? content.find(cell => cell.id === requestedCellId) ?? null
+      : null;
+    evidenceCellHintRef.current = evidenceTarget?.id ?? null;
+    setActiveCellId(evidenceTarget?.id ?? (content.length > 0 ? content[0].id : null));
     setIsLoadingFile(false);
+    if (evidenceTarget) {
+      const targetIndex = content.findIndex(cell => cell.id === evidenceTarget.id);
+      setPendingFocus({ cellId: evidenceTarget.id, mode: 'cell' });
+      setTimeout(() => scrollToCell(targetIndex, { behavior: 'auto', retryOnce: true }), 0);
+    }
 
     // Load persisted history, session state, agent permission, and notebook settings
     Promise.all([
@@ -2438,7 +2484,7 @@ export const Notebook: React.FC = () => {
         setIsFullWidth(notebookSettings?.full_width === true);
         // Restore unflushed edit state so undo can capture pending changes
         // Also navigate to the cell with unflushed edits so flushActiveCell works
-        if (savedSession.unflushedEdit) {
+        if (!evidenceTarget && savedSession.unflushedEdit) {
           setUnflushedState(savedSession.unflushedEdit);
           const cellId = savedSession.unflushedEdit.cellId;
           const cellIndex = content.findIndex(c => c.id === cellId);
@@ -2448,7 +2494,7 @@ export const Notebook: React.FC = () => {
             setPendingFocus({ cellId, mode: 'editor' });
             scrollToCell(cellIndex, { behavior: 'auto' });
           }
-        } else if (savedSession.activeCellId) {
+        } else if (!evidenceTarget && savedSession.activeCellId) {
           // No unflushed edits, but restore last focused cell position
           const cellId = savedSession.activeCellId;
           const cellIndex = content.findIndex(c => c.id === cellId);
@@ -2473,6 +2519,18 @@ export const Notebook: React.FC = () => {
     // Base directory for file-path completion (kernel cwd = notebook dir).
     setActiveNotebookPath(id); // file ids are server paths
     // Note: No need to scroll to top - Virtuoso resets when key={currentFileId} changes
+
+    // Sealed evidence is a static rendering target. Do not attach or create a
+    // live kernel: execution would produce state that is not part of the seal.
+    if (access.read_only) {
+      setExecutionQueue([]);
+      executionRunIdsRef.current.clear();
+      setIsProcessingQueue(false);
+      setKernelSessionId(null);
+      setKernelStatus('disconnected');
+      setIsKernelReady(false);
+      return;
+    }
 
     // Resolve kernel/server preference (server is the source of truth)
     let preferredKernel = notebookKernel || currentKernel;
@@ -2611,7 +2669,11 @@ export const Notebook: React.FC = () => {
   const loadFile = async (id: string) => {
     setIsLoadingFile(true);
     try {
-      const result = await getFileContentWithMtime(id);
+      const evidenceLink = getEvidenceLinkForFile(id);
+      const result = await getFileContentWithMtime(
+        id,
+        evidenceLink.sealId ? { sealId: evidenceLink.sealId } : {},
+      );
       if (result) {
         setLastKnownMtime(result.mtime);
         setPendingSave(false);
@@ -2621,11 +2683,15 @@ export const Notebook: React.FC = () => {
           result.cells,
           result.kernelspec,
           id,
+          result.access ?? { read_only: false },
+          evidenceLink.cellId,
         );
       } else {
         // File doesn't exist or is empty
         setIsLoadingFile(false);
         setCurrentFileId(null);
+        setNotebookAccess({ read_only: false });
+        evidenceCellHintRef.current = null;
         setLastKnownMtime(null);
         saveActiveFileId('');
       }
@@ -2633,6 +2699,8 @@ export const Notebook: React.FC = () => {
       console.error('Failed to load file:', error);
       setIsLoadingFile(false);
       setCurrentFileId(null);
+      setNotebookAccess({ read_only: false });
+      evidenceCellHintRef.current = null;
       setLastKnownMtime(null);
       saveActiveFileId('');
     }
@@ -2649,6 +2717,7 @@ export const Notebook: React.FC = () => {
   // Manual save with confirmation when redo history exists
   // This function is called by both the Save button and Ctrl+S keyboard shortcut
   const handleManualSave = useCallback(async () => {
+    if (isSealedReadOnly) return;
     if (canRedo) {
       const confirmed = await confirm({
         title: 'Save will clear redo history',
@@ -2664,7 +2733,7 @@ export const Notebook: React.FC = () => {
     commitHistoryBeforeKeyframe();
     await saveNow();
     await refreshFileList();
-  }, [canRedo, confirm, flushActiveCell, commitHistoryBeforeKeyframe, saveNow]);
+  }, [isSealedReadOnly, canRedo, confirm, flushActiveCell, commitHistoryBeforeKeyframe, saveNow]);
 
   // Update ref synchronously (useLayoutEffect runs before browser paint and event handlers)
   useLayoutEffect(() => {
@@ -2832,7 +2901,7 @@ export const Notebook: React.FC = () => {
   }, [restoreDialogTimestamp, previewCells, currentFileId, currentCellMap, generateRestoredFilename, getFullHistory, currentKernel, toast, refreshFileList]);
 
   const handleResetHistory = useCallback(async () => {
-    if (!currentFileId) return;
+    if (!currentFileId || isSealedReadOnly) return;
     if (!historyReady) {
       toast('History is still loading', 'info', 2000);
       return;
@@ -2871,6 +2940,7 @@ export const Notebook: React.FC = () => {
     toast('History reset, but failed to persist session state', 'warning', 2500);
   }, [
     currentFileId,
+    isSealedReadOnly,
     historyReady,
     confirm,
     toast,
@@ -2881,7 +2951,7 @@ export const Notebook: React.FC = () => {
 
   // Toggle agent permission for the notebook
   const handleToggleAgentPermission = useCallback(async () => {
-    if (!currentFileId) return;
+    if (!currentFileId || isSealedReadOnly) return;
 
     const newPermitted = !agentPermissionStatus?.agent_permitted;
     const result = await setAgentPermission(currentFileId, newPermitted);
@@ -2905,10 +2975,10 @@ export const Notebook: React.FC = () => {
     } else {
       toast('Failed to update agent permission', 'error');
     }
-  }, [currentFileId, agentPermissionStatus, toast]);
+  }, [currentFileId, isSealedReadOnly, agentPermissionStatus, toast]);
 
   const handleToggleOutputLogging = useCallback(async () => {
-    if (!currentFileId) return;
+    if (!currentFileId || isSealedReadOnly) return;
 
     const newMode: OutputLoggingMode = outputLoggingMode === 'minimal' ? 'full' : 'minimal';
     const result = await updateNotebookSettings(currentFileId, { output_logging: newMode });
@@ -2923,10 +2993,10 @@ export const Notebook: React.FC = () => {
     } else {
       toast('Failed to update output logging mode', 'error');
     }
-  }, [currentFileId, outputLoggingMode, toast]);
+  }, [currentFileId, isSealedReadOnly, outputLoggingMode, toast]);
 
   const handleToggleFullWidth = useCallback(async () => {
-    if (!currentFileId) return;
+    if (!currentFileId || isSealedReadOnly) return;
 
     const nextFullWidth = !isFullWidth;
     setIsFullWidth(nextFullWidth);
@@ -2940,7 +3010,7 @@ export const Notebook: React.FC = () => {
 
     setIsFullWidth(!nextFullWidth);
     toast('Failed to update notebook width mode', 'error');
-  }, [currentFileId, isFullWidth, toast, setLastKnownMtime]);
+  }, [currentFileId, isSealedReadOnly, isFullWidth, toast, setLastKnownMtime]);
 
   // --- KERNEL OPERATIONS ---
 
@@ -2951,6 +3021,9 @@ export const Notebook: React.FC = () => {
     source: EditSource = 'user',
     bypassLoginNodeGate = false
   ): Promise<{ success: boolean; sessionId?: string; kernelName?: string; error?: string; code?: string }> => {
+    if (isSealedReadOnly) {
+      return { success: false, error: 'Sealed evidence is read-only', code: 'sealed_read_only' };
+    }
     // Use provided serverId or fall back to currently selected server
     const targetServerId = serverId !== undefined ? serverId : selectedServerId;
 
@@ -3325,6 +3398,7 @@ export const Notebook: React.FC = () => {
   // --- CELL OPERATIONS ---
 
   const addCell = (type: CellType = 'code', content: string = '', afterIndex?: number, noScroll?: boolean | 'cell' | 'editor') => {
+    if (isSealedReadOnly) return;
     // Keyframe: flush active cell before insert
     flushActiveCell();
 
@@ -3402,18 +3476,20 @@ export const Notebook: React.FC = () => {
   // state updates would overwrite CodeMirror's current content when typing fast.
   // CodeMirror renders synchronously, so we don't need startTransition for perceived performance.
   const handleUpdateCell = useCallback((id: string, content: string) => {
+    if (isSealedReadOnly) return;
     // First edit while redo stack is non-empty is a keyframe
     // This commits the redo history before the new edit timeline begins
     if (hasRedoToFlush()) {
       flushCell(id, content);
     }
     setCells(prev => prev.map(c => c.id === id ? { ...c, content } : c));
-  }, [setCells, hasRedoToFlush, flushCell]);
+  }, [isSealedReadOnly, setCells, hasRedoToFlush, flushCell]);
 
   // AI/bulk update with undo tracking - for AI edits, annotated as AI source
   const handleAIUpdateCell = useCallback((id: string, content: string) => {
+    if (isSealedReadOnly) return;
     updateContentAI(id, content);
-  }, [updateContentAI]);
+  }, [isSealedReadOnly, updateContentAI]);
 
   // Edit cell from copilot sidebar - also AI-generated content
   const handleEditCell = (index: number, newContent: string) => {
@@ -3474,12 +3550,14 @@ export const Notebook: React.FC = () => {
   };
 
   const changeCellType = (id: string, type: CellType) => {
+    if (isSealedReadOnly) return;
     // Keyframe: flush active cell before type change
     flushActiveCell();
     changeType(id, type);
   };
 
   const deleteCell = (id: string) => {
+    if (isSealedReadOnly) return;
     // Keyframe: flush active cell before delete
     flushActiveCell();
 
@@ -3518,6 +3596,7 @@ export const Notebook: React.FC = () => {
   redoFnRef.current = redo;
 
   const moveCell = (id: string, direction: 'up' | 'down') => {
+    if (isSealedReadOnly) return;
     // Keyframe: flush active cell before move
     flushActiveCell();
 
@@ -3540,6 +3619,7 @@ export const Notebook: React.FC = () => {
 
   // Drag-and-drop reorder: move a cell to an arbitrary position (single undo step)
   const reorderCellTo = useCallback((draggedId: string, targetId: string, position: 'above' | 'below') => {
+    if (isSealedReadOnly) return;
     flushActiveCell();
 
     const currentCells = cellsRef.current;
@@ -3553,7 +3633,7 @@ export const Notebook: React.FC = () => {
 
     undoableMoveCell(fromIdx, toIdx);
     setActiveCellId(draggedId);
-  }, [flushActiveCell, undoableMoveCell]);
+  }, [isSealedReadOnly, flushActiveCell, undoableMoveCell]);
 
   const updateCellOutputs = (id: string, newOutputs: any[], isExec: boolean) => {
     setCells(prev => prev.map(c => c.id === id ? { ...c, outputs: newOutputs, isExecuting: isExec } : c));
@@ -3567,6 +3647,7 @@ export const Notebook: React.FC = () => {
   };
 
   const queueExecution = (id: string) => {
+    if (isSealedReadOnly) return;
     // Keyframe: flush active cell before execution
     flushActiveCell();
 
@@ -3617,6 +3698,7 @@ export const Notebook: React.FC = () => {
   queueExecutionRef.current = queueExecution;
 
   const handleRunAllCells = useCallback(() => {
+    if (isSealedReadOnly) return;
     logOperation({
       type: 'event',
       category: 'execution',
@@ -3624,7 +3706,7 @@ export const Notebook: React.FC = () => {
       data: { cellCount: cellStats.codeCount },
     });
     cellsRef.current.forEach(c => queueExecution(c.id));
-  }, [cellStats.codeCount, logOperation, queueExecution]);
+  }, [isSealedReadOnly, cellStats.codeCount, logOperation, queueExecution]);
 
   // Navigate to a specific cell (used by search)
   const navigateToCell = useCallback((_cellIndex: number, cellId: string) => {
@@ -4228,31 +4310,31 @@ export const Notebook: React.FC = () => {
   const modKeyLabel = isMacPlatform ? '⌘' : 'Ctrl+';
   const paletteCommands: PaletteCommand[] = [
     // Run
-    { id: 'run-all', title: 'Run all cells', section: 'Run', keywords: 'execute everything', run: handleRunAllCells },
-    { id: 'interrupt-kernel', title: 'Interrupt kernel', section: 'Kernel', keywords: 'stop cancel execution', disabled: !kernelSessionId, run: () => { interruptKernel(); } },
-    { id: 'restart-kernel', title: 'Restart kernel', section: 'Kernel', keywords: 'reset', disabled: !kernelSessionId, run: () => { restartKernel(); } },
-    { id: 'change-kernel', title: 'Change kernel…', section: 'Kernel', keywords: 'switch select python julia r server', run: () => setIsKernelMenuOpen(true) },
-    { id: 'manage-kernels', title: 'Manage running kernels…', section: 'Kernel', keywords: 'sessions list', run: () => setIsKernelManagerOpen(true) },
+    { id: 'run-all', title: 'Run all cells', section: 'Run', keywords: 'execute everything', disabled: isSealedReadOnly, run: handleRunAllCells },
+    { id: 'interrupt-kernel', title: 'Interrupt kernel', section: 'Kernel', keywords: 'stop cancel execution', disabled: isSealedReadOnly || !kernelSessionId, run: () => { interruptKernel(); } },
+    { id: 'restart-kernel', title: 'Restart kernel', section: 'Kernel', keywords: 'reset', disabled: isSealedReadOnly || !kernelSessionId, run: () => { restartKernel(); } },
+    { id: 'change-kernel', title: 'Change kernel…', section: 'Kernel', keywords: 'switch select python julia r server', disabled: isSealedReadOnly, run: () => setIsKernelMenuOpen(true) },
+    { id: 'manage-kernels', title: 'Manage running kernels…', section: 'Kernel', keywords: 'sessions list', disabled: isSealedReadOnly, run: () => setIsKernelManagerOpen(true) },
     // File
-    { id: 'save', title: 'Save notebook', section: 'File', keywords: 'write disk', shortcut: `${modKeyLabel}S`, run: () => { handleManualSave(); } },
+    { id: 'save', title: 'Save notebook', section: 'File', keywords: 'write disk', shortcut: `${modKeyLabel}S`, disabled: isSealedReadOnly, run: () => { handleManualSave(); } },
     { id: 'open-file-browser', title: 'Open file browser', section: 'File', keywords: 'files sidebar explorer open notebook', run: () => setIsFileBrowserOpen(true) },
-    { id: 'rename-notebook', title: 'Rename notebook…', section: 'File', keywords: 'title filename', disabled: !currentFileId, run: startRenameNotebook },
+    { id: 'rename-notebook', title: 'Rename notebook…', section: 'File', keywords: 'title filename', disabled: isSealedReadOnly || !currentFileId, run: startRenameNotebook },
     // Edit
-    { id: 'add-code-cell', title: 'Add code cell at end', section: 'Edit', keywords: 'insert new append', run: () => handleAddCell('code') },
-    { id: 'add-markdown-cell', title: 'Add markdown cell at end', section: 'Edit', keywords: 'insert new append text', run: () => handleAddCell('markdown') },
-    { id: 'undo', title: 'Undo', section: 'Edit', keywords: 'revert', shortcut: `${modKeyLabel}Z`, disabled: !canUndo, run: undo },
-    { id: 'redo', title: 'Redo', section: 'Edit', keywords: 'repeat', shortcut: `${modKeyLabel}Y`, disabled: !canRedo, run: redo },
+    { id: 'add-code-cell', title: 'Add code cell at end', section: 'Edit', keywords: 'insert new append', disabled: isSealedReadOnly, run: () => handleAddCell('code') },
+    { id: 'add-markdown-cell', title: 'Add markdown cell at end', section: 'Edit', keywords: 'insert new append text', disabled: isSealedReadOnly, run: () => handleAddCell('markdown') },
+    { id: 'undo', title: 'Undo', section: 'Edit', keywords: 'revert', shortcut: `${modKeyLabel}Z`, disabled: isSealedReadOnly || !canUndo, run: undo },
+    { id: 'redo', title: 'Redo', section: 'Edit', keywords: 'repeat', shortcut: `${modKeyLabel}Y`, disabled: isSealedReadOnly || !canRedo, run: redo },
     { id: 'find', title: 'Find & replace…', section: 'Edit', keywords: 'search regex', shortcut: `${modKeyLabel}F`, run: () => setIsSearchOpen(true) },
     { id: 'go-to-cell', title: 'Go to cell…', section: 'Edit', keywords: 'jump navigate search cells spotlight', shortcut: `${isMacPlatform ? '⌘' : 'Ctrl+'}P`, run: () => openNavigator('') },
     // View
-    { id: 'toggle-full-width', title: isFullWidth ? 'Exit full width mode' : 'Enter full width mode', section: 'View', keywords: 'wide layout width', run: () => { handleToggleFullWidth(); } },
+    { id: 'toggle-full-width', title: isFullWidth ? 'Exit full width mode' : 'Enter full width mode', section: 'View', keywords: 'wide layout width', disabled: isSealedReadOnly, run: () => { handleToggleFullWidth(); } },
     { id: 'toggle-history', title: isHistoryOpen ? 'Hide history panel' : 'Show history panel', section: 'View', keywords: 'time travel edits undo timeline', run: () => setIsHistoryOpen(open => !open) },
-    { id: 'toggle-terminal', title: isTerminalOpen && terminalTab === 'shell' ? 'Hide terminal' : 'Show terminal', section: 'View', keywords: 'shell console', run: () => {
+    { id: 'toggle-terminal', title: isTerminalOpen && terminalTab === 'shell' ? 'Hide terminal' : 'Show terminal', section: 'View', keywords: 'shell console', disabled: isSealedReadOnly, run: () => {
       if (!isTerminalOpen) { setIsTerminalOpen(true); setTerminalTab('shell'); }
       else if (terminalTab === 'shell') setIsTerminalOpen(false);
       else setTerminalTab('shell');
     } },
-    { id: 'open-agent', title: 'Open agent terminal', section: 'View', keywords: 'claude code codex ai assistant', run: () => { setIsTerminalOpen(true); setTerminalTab('agent'); } },
+    { id: 'open-agent', title: 'Open agent terminal', section: 'View', keywords: 'claude code codex ai assistant', disabled: isSealedReadOnly, run: () => { setIsTerminalOpen(true); setTerminalTab('agent'); } },
     { id: 'open-settings', title: 'Open settings…', section: 'View', keywords: 'preferences options', run: () => setIsSettingsOpen(true) },
     { id: 'keyboard-shortcuts', title: 'Keyboard shortcuts', section: 'Help', keywords: 'keys bindings hotkeys help', run: () => setIsKeyboardHelpOpen(true) },
   ];
@@ -4422,9 +4504,9 @@ export const Notebook: React.FC = () => {
                         </span>
                       ) : (
                         <span
-                          onClick={startRenameNotebook}
-                          className="cursor-pointer hover:bg-slate-100 px-1 rounded transition-colors"
-                          title="Click to rename"
+                          onClick={isSealedReadOnly ? undefined : startRenameNotebook}
+                          className={isSealedReadOnly ? 'px-1' : 'cursor-pointer hover:bg-slate-100 px-1 rounded transition-colors'}
+                          title={isSealedReadOnly ? 'Sealed notebook names cannot be changed' : 'Click to rename'}
                         >
                           {currentFilename || "Untitled"}
                         </span>
@@ -4444,15 +4526,16 @@ export const Notebook: React.FC = () => {
                       {/* Kernel Selector */}
                       <div className="relative">
                       <button
-                        onClick={() => setIsKernelMenuOpen(!isKernelMenuOpen)}
-                        className="flex items-center gap-1.5 text-xs text-slate-600 hover:bg-slate-200/50 px-1.5 py-0.5 rounded -ml-1.5 transition-colors"
+                        onClick={() => { if (!isSealedReadOnly) setIsKernelMenuOpen(!isKernelMenuOpen); }}
+                        disabled={isSealedReadOnly}
+                        className={`flex items-center gap-1.5 text-xs px-1.5 py-0.5 rounded -ml-1.5 transition-colors ${isSealedReadOnly ? 'text-indigo-500 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-200/50'}`}
                       >
-                         <span className={`w-2 h-2 rounded-full ${getStatusColor()}`}></span>
-                         <span className="font-medium">{getKernelDisplayName()}</span>
-                         <ChevronDown className="w-3 h-3 text-slate-400" />
+                         {isSealedReadOnly ? <LockKeyhole className="w-3 h-3" /> : <span className={`w-2 h-2 rounded-full ${getStatusColor()}`}></span>}
+                         <span className="font-medium">{isSealedReadOnly ? 'Static snapshot' : getKernelDisplayName()}</span>
+                         {!isSealedReadOnly && <ChevronDown className="w-3 h-3 text-slate-400" />}
                       </button>
 
-                      {isKernelMenuOpen && (
+                      {isKernelMenuOpen && !isSealedReadOnly && (
                         <div
                           className="absolute top-full left-0 mt-1 w-80 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 max-h-[70vh] overflow-hidden flex flex-col"
                           onMouseLeave={() => setIsKernelMenuOpen(false)}
@@ -4964,7 +5047,7 @@ export const Notebook: React.FC = () => {
                   <div className="flex items-center gap-1 mr-2 border-r border-slate-200 pr-2">
                     <button
                       onClick={undo}
-                      disabled={!canUndo}
+                      disabled={isSealedReadOnly || !canUndo}
                       className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded disabled:opacity-30 transition-colors"
                       title="Notebook Undo"
                       aria-label="Notebook undo"
@@ -4973,7 +5056,7 @@ export const Notebook: React.FC = () => {
                     </button>
                     <button
                       onClick={redo}
-                      disabled={!canRedo}
+                      disabled={isSealedReadOnly || !canRedo}
                       className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded disabled:opacity-30 transition-colors"
                       title="Notebook Redo"
                       aria-label="Notebook redo"
@@ -5017,6 +5100,7 @@ export const Notebook: React.FC = () => {
                   {showOutputLoggingToggle && (
                     <button
                       onClick={handleToggleOutputLogging}
+                      disabled={isSealedReadOnly}
                       className={`p-1.5 rounded-md transition-colors ${
                         outputLoggingMode === 'full'
                           ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
@@ -5035,7 +5119,7 @@ export const Notebook: React.FC = () => {
                   {/* Agent Permission Toggle */}
                   <button
                     onClick={handleToggleAgentPermission}
-                    disabled={agentSession !== null}
+                    disabled={isSealedReadOnly || agentSession !== null}
                     className={`btn-secondary flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
                       agentSession
                         ? 'bg-purple-100 text-purple-600 cursor-not-allowed'
@@ -5064,6 +5148,7 @@ export const Notebook: React.FC = () => {
                   </button>
                   <button
                     onClick={handleToggleFullWidth}
+                    disabled={isSealedReadOnly}
                     aria-label={isFullWidth ? 'Exit full width mode' : 'Enable full width mode'}
                     className={`btn-secondary flex items-center justify-center px-2 py-1.5 rounded-md text-xs font-medium transition-colors ${
                       isFullWidth
@@ -5082,13 +5167,22 @@ export const Notebook: React.FC = () => {
                   >
                     <Settings className="w-4 h-4" />
                   </button>
-                  <button onClick={handleManualSave} className="btn-secondary flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-200 text-slate-600 text-xs font-medium transition-colors">
+                  <button
+                    onClick={handleManualSave}
+                    disabled={isSealedReadOnly}
+                    aria-label="Save notebook"
+                    title={isSealedReadOnly ? 'Sealed evidence is read-only' : 'Save notebook'}
+                    className="btn-secondary flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-200 text-slate-600 text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
                       <Save className="w-4 h-4" />
                       <span className="hidden lg:inline">Save</span>
                   </button>
                   <button
                     onClick={handleRunAllCells}
-                    className="btn-primary flex items-center gap-2 bg-slate-900 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-700 text-xs font-medium transition-colors shadow-sm"
+                    disabled={isSealedReadOnly}
+                    aria-label="Run all cells"
+                    title={isSealedReadOnly ? 'Sealed evidence cannot be re-executed' : 'Run all cells'}
+                    className="btn-primary flex items-center gap-2 bg-slate-900 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-700 text-xs font-medium transition-colors shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed disabled:shadow-none"
                   >
                       <Play className="w-4 h-4" />
                       <span className="hidden md:inline">Run All</span>
@@ -5100,12 +5194,13 @@ export const Notebook: React.FC = () => {
                       else if (terminalTab === 'agent') setIsTerminalOpen(false);
                       else setTerminalTab('agent');
                     }}
+                    disabled={isSealedReadOnly}
                     className={`flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-md font-medium text-xs transition-all shadow-sm
                       ${isTerminalOpen && terminalTab === 'agent'
                         ? 'bg-purple-600 text-white ring-2 ring-purple-200'
                         : 'bg-white text-slate-700 border border-purple-200 hover:border-purple-300 hover:bg-purple-50'
                       }`}
-                    title="Open the agent terminal — drive this notebook with Claude Code or Codex"
+                    title={isSealedReadOnly ? 'Agent editing is disabled for sealed evidence' : 'Open the agent terminal — drive this notebook with Claude Code or Codex'}
                   >
                     <Bot className={`w-4 h-4 ${isTerminalOpen && terminalTab === 'agent' ? 'text-purple-200' : 'text-purple-600'}`} />
                     <span className="hidden md:inline">Agent</span>
@@ -5114,6 +5209,36 @@ export const Notebook: React.FC = () => {
                </div>
             </div>
         </header>
+
+        {notebookAccess.read_only && (
+          <div className="flex-none border-b border-indigo-800 bg-indigo-950 px-4 py-2 text-indigo-50" data-testid="sealed-evidence-ribbon">
+            <div className={`${notebookChromeClass} flex flex-wrap items-center gap-x-3 gap-y-1`}>
+              <span className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+                <LockKeyhole className="h-4 w-4 text-indigo-300" />
+                Sealed evidence
+              </span>
+              <code className="rounded border border-indigo-700 bg-indigo-900/70 px-1.5 py-0.5 text-[0.6875rem] text-indigo-200">
+                {notebookAccess.seal_id}
+              </code>
+              <span className="text-xs text-indigo-200/80">
+                Read-only replay snapshot · saved outputs remain available
+              </span>
+              {currentFileId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    downloadFile(currentFileId, currentFileId.split('/').pop() || 'snapshot.ipynb')
+                      .catch(() => toast('Failed to download sealed snapshot', 'error'));
+                  }}
+                  className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-indigo-100 hover:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  aria-label="Download snapshot"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download snapshot
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Loading progress bar */}
         {isLoadingFile && (
@@ -5188,7 +5313,7 @@ export const Notebook: React.FC = () => {
             {/* Empty-notebook first-run panel: shown while the notebook is a
                 single blank cell (or empty); disappears the moment anything is
                 typed or added. Anchored to the cell area, above the pill. */}
-            {!isLoadingFile && !isPreviewMode && currentFileId && (
+            {!isLoadingFile && !isPreviewMode && !isSealedReadOnly && currentFileId && (
               cells.length === 0 ||
               (cells.length === 1 && !cells[0].content.trim() && cells[0].outputs.length === 0)
             ) && (
@@ -5226,20 +5351,20 @@ export const Notebook: React.FC = () => {
             {/* Add-cell pill — floats over the bottom of the cell area */}
             <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20">
               <div className={`${notebookContentClass} flex justify-center`}>
-                <div className={`pointer-events-auto flex gap-4 rounded-full border border-slate-200 bg-white p-2 shadow-lg ${agentSession ? 'opacity-50' : ''}`}>
+                <div className={`pointer-events-auto flex gap-4 rounded-full border border-slate-200 bg-white p-2 shadow-lg ${agentSession || isSealedReadOnly ? 'opacity-50' : ''}`}>
                   <button
                     onClick={() => handleAddCell('code')}
-                    disabled={agentSession !== null}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${agentSession ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
-                    title={agentSession ? 'Locked during agent session' : 'Add Code Cell'}
+                    disabled={isSealedReadOnly || agentSession !== null}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${agentSession || isSealedReadOnly ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                    title={isSealedReadOnly ? 'Sealed evidence is read-only' : agentSession ? 'Locked during agent session' : 'Add Code Cell'}
                   >
                     <Plus className="w-4 h-4" /> Code
                   </button>
                   <button
                     onClick={() => handleAddCell('markdown')}
-                    disabled={agentSession !== null}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${agentSession ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
-                    title={agentSession ? 'Locked during agent session' : 'Add Text Cell'}
+                    disabled={isSealedReadOnly || agentSession !== null}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-colors ${agentSession || isSealedReadOnly ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                    title={isSealedReadOnly ? 'Sealed evidence is read-only' : agentSession ? 'Locked during agent session' : 'Add Text Cell'}
                   >
                     <Plus className="w-4 h-4" /> Text
                   </button>
@@ -5264,7 +5389,7 @@ export const Notebook: React.FC = () => {
                   isSelected={!isPreviewMode && selectedCellIds.has(cell.id)}
                   isHighlighted={highlightedCellIds.has(cell.id)}
                   agentActive={agentActiveCellIds.has(cell.id)}
-                  isLocked={agentSession?.exclusive === true || isPreviewMode}
+                  isLocked={isSealedReadOnly || agentSession?.exclusive === true || isPreviewMode}
                   allCellsRef={displayCellsRef}
                   cellIndexMapRef={cellIndexMapRef}
                   onUpdate={handleUpdateCell}
@@ -5279,7 +5404,7 @@ export const Notebook: React.FC = () => {
                   onActivate={setActiveCellId}
                   onNavigateCell={(direction) => navigateCellRelative(cell.id, direction)}
                   onEditorBoundaryNavigate={handleEditorBoundaryNavigate}
-                  onReorder={isPreviewMode ? undefined : reorderCellTo}
+                  onReorder={isPreviewMode || isSealedReadOnly ? undefined : reorderCellTo}
                   onAddCell={(afterIndex) => addCell('code', '', afterIndex, true)}
                   onSave={handleManualSave}
                   onSetCellScrolled={setCellScrolled}
@@ -5309,7 +5434,7 @@ export const Notebook: React.FC = () => {
 
         {/* Terminal Panel */}
         <TerminalPanel
-          isOpen={isTerminalOpen}
+          isOpen={isTerminalOpen && !isSealedReadOnly}
           onClose={() => setIsTerminalOpen(false)}
           notebookPath={currentFileId}
           activeTab={terminalTab}
@@ -5321,11 +5446,11 @@ export const Notebook: React.FC = () => {
           isOpen={isHistoryOpen}
           onClose={() => setIsHistoryOpen(false)}
           history={getFullHistory()}
-          onResetHistory={currentFileId && historyReady ? handleResetHistory : undefined}
+          onResetHistory={!isSealedReadOnly && currentFileId && historyReady ? handleResetHistory : undefined}
           onPreview={setPreviewTimestamp}
           onExitPreview={() => setPreviewTimestamp(null)}
           previewTimestamp={previewTimestamp}
-          onRequestRestore={setRestoreDialogTimestamp}
+          onRequestRestore={isSealedReadOnly ? undefined : setRestoreDialogTimestamp}
         />
 
         {/* Restore Dialog */}
@@ -5348,12 +5473,13 @@ export const Notebook: React.FC = () => {
           <div className="flex items-center gap-3 flex-shrink-0">
             <button
               onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+              disabled={isSealedReadOnly}
               className={`flex items-center gap-1.5 px-2 py-0.5 rounded transition-colors ${
                 isTerminalOpen
                   ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
                   : 'hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
-              title="Toggle terminal panel (Ctrl+`)"
+              title={isSealedReadOnly ? 'Terminal disabled while viewing sealed evidence' : 'Toggle terminal panel (Ctrl+`)'}
             >
               <Terminal className="w-3 h-3" />
               <span>Terminal</span>
@@ -5565,13 +5691,14 @@ export const Notebook: React.FC = () => {
       <NotebookSearch
         cells={cells}
         isOpen={isSearchOpen}
+        readOnly={isSealedReadOnly}
         onClose={handleSearchClose}
         onNavigateToCell={navigateToCell}
         getCursorAnchor={getCursorAnchor}
         onSearchChange={handleSearchChange}
-        onReplace={handleReplace}
-        onReplaceAllInCell={handleReplaceAllInCell}
-        onReplaceAllInNotebook={handleReplaceAllInNotebook}
+        onReplace={isSealedReadOnly ? undefined : handleReplace}
+        onReplaceAllInCell={isSealedReadOnly ? undefined : handleReplaceAllInCell}
+        onReplaceAllInNotebook={isSealedReadOnly ? undefined : handleReplaceAllInNotebook}
         activeCellId={activeCellId}
         initialQuery={searchSeed !== null ? searchSeed : undefined}
       />

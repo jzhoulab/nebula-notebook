@@ -32,6 +32,83 @@ import { getFormatAdapter, isNotebookPath, defaultKernelForPath } from './notebo
 import { isPercentNotebookText } from './notebook-formats/percent';
 import { NotebookFormatAdapter } from './notebook-formats/types';
 import { buildDisplayOutput, convertMimeBundleToJupyter } from '../output/display-data';
+import { assertPathMutable, classifySealedPath } from './sealed-path';
+
+const JUPYTER_CELL_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function isValidJupyterCellId(value: unknown): value is string {
+  return typeof value === 'string' && JUPYTER_CELL_ID_PATTERN.test(value);
+}
+
+/**
+ * Resolve stable, unique IDs for every cell in an imported notebook.
+ *
+ * Native nbformat IDs own the namespace before legacy metadata fallbacks are
+ * considered. This prevents an earlier legacy-only or malformed cell from
+ * stealing a valid native ID from a later cell. The first occurrence of a
+ * duplicate native ID remains canonical; later duplicates are repaired using
+ * an otherwise-unclaimed legacy ID or a deterministic position-based ID.
+ */
+function resolveJupyterCellIds(cells: JupyterCell[]): string[] {
+  const resolved: Array<string | undefined> = new Array(cells.length);
+  const nativeOwners = new Map<string, number>();
+
+  cells.forEach((cell, index) => {
+    if (isValidJupyterCellId(cell.id) && !nativeOwners.has(cell.id)) {
+      nativeOwners.set(cell.id, index);
+    }
+  });
+
+  const reservedNativeIds = new Set(nativeOwners.keys());
+  const used = new Set<string>();
+  for (const [id, index] of nativeOwners) {
+    resolved[index] = id;
+    used.add(id);
+  }
+
+  cells.forEach((cell, index) => {
+    if (resolved[index] !== undefined) return;
+    const legacyId = cell.metadata?.nebula_id;
+    if (
+      isValidJupyterCellId(legacyId)
+      && !reservedNativeIds.has(legacyId)
+      && !used.has(legacyId)
+    ) {
+      resolved[index] = legacyId;
+      used.add(legacyId);
+    }
+  });
+
+  cells.forEach((_cell, index) => {
+    if (resolved[index] !== undefined) return;
+    const base = `cell-${index}`;
+    let candidate = base;
+    let suffix = 1;
+    while (reservedNativeIds.has(candidate) || used.has(candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    resolved[index] = candidate;
+    used.add(candidate);
+  });
+
+  return resolved as string[];
+}
+
+function validateJupyterCellIds(cells: NebulaCell[]): void {
+  const seen = new Set<string>();
+  cells.forEach((cell, index) => {
+    if (!isValidJupyterCellId(cell.id)) {
+      throw new Error(
+        `Invalid Jupyter cell ID at index ${index}: expected 1-64 ASCII letters, digits, hyphens, or underscores`
+      );
+    }
+    if (seen.has(cell.id)) {
+      throw new Error(`Duplicate Jupyter cell ID at index ${index}: ${cell.id}`);
+    }
+    seen.add(cell.id);
+  });
+}
 
 const NEBULA_DIR = path.join(os.homedir(), '.nebula');
 const USER_CONFIG_PATH = path.join(NEBULA_DIR, 'config.json');
@@ -348,6 +425,10 @@ export class FilesystemService {
    * Prevents partial/corrupt files on interruption.
    */
   private atomicWriteFileSync(targetPath: string, data: string): void {
+    // Keep the immutability check at the lowest shared write primitive as a
+    // backstop for future notebook mutation APIs. ReplaySealService bypasses
+    // FilesystemService and writes its staging/seal artifacts directly.
+    assertPathMutable(targetPath, { operation: 'write' });
     const dir = path.dirname(targetPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -394,6 +475,7 @@ export class FilesystemService {
    * notebook file itself stays fully durable.
    */
   private async atomicWriteFile(targetPath: string, data: string, opts: { durable?: boolean } = {}): Promise<void> {
+    assertPathMutable(targetPath, { operation: 'write' });
     const durable = opts.durable !== false;
     const dir = path.dirname(targetPath);
     await fsp.mkdir(dir, { recursive: true });
@@ -661,6 +743,7 @@ export class FilesystemService {
    */
   writeFile(filePath: string, content: unknown, fileType: 'text' | 'notebook' = 'text'): boolean {
     const normalizedPath = this.normalizePath(filePath);
+    assertPathMutable(normalizedPath, { operation: 'write' });
 
     // Create parent directories if needed
     const parentDir = path.dirname(normalizedPath);
@@ -682,6 +765,7 @@ export class FilesystemService {
    */
   createFile(filePath: string, isDirectory: boolean = false): FileInfo & { is_directory: boolean } {
     const normalizedPath = this.normalizePath(filePath);
+    assertPathMutable(normalizedPath, { operation: 'create a file in' });
 
     if (fs.existsSync(normalizedPath)) {
       throw new Error(`Path already exists: ${normalizedPath}`);
@@ -845,6 +929,7 @@ export class FilesystemService {
    */
   deleteFile(filePath: string): boolean {
     const normalizedPath = this.normalizePath(filePath);
+    assertPathMutable(normalizedPath, { operation: 'delete', protectDescendants: true });
 
     if (!fs.existsSync(normalizedPath)) {
       throw new Error(`Path not found: ${normalizedPath}`);
@@ -903,6 +988,8 @@ export class FilesystemService {
   renameFile(oldPath: string, newPath: string): FileInfo {
     const normalizedOld = this.normalizePath(oldPath);
     const normalizedNew = this.normalizePath(newPath);
+    assertPathMutable(normalizedOld, { operation: 'move', protectDescendants: true });
+    assertPathMutable(normalizedNew, { operation: 'move a file into' });
 
     if (!fs.existsSync(normalizedOld)) {
       throw new Error(`Path not found: ${normalizedOld}`);
@@ -985,6 +1072,7 @@ export class FilesystemService {
    */
   duplicateFile(filePath: string): FileInfoResponse {
     const normalizedPath = this.normalizePath(filePath);
+    assertPathMutable(normalizedPath, { operation: 'duplicate', protectDescendants: true });
 
     if (!fs.existsSync(normalizedPath)) {
       throw new Error(`File not found: ${normalizedPath}`);
@@ -1043,6 +1131,7 @@ export class FilesystemService {
     onConflict: 'rename' | 'overwrite' | 'fail' = 'rename'
   ): Promise<FileInfoResponse> {
     const normalizedDir = this.normalizePath(destDir);
+    assertPathMutable(normalizedDir, { operation: 'upload into' });
 
     if (!fs.existsSync(normalizedDir)) {
       throw new Error(`Directory not found: ${normalizedDir}`);
@@ -1055,6 +1144,7 @@ export class FilesystemService {
 
     // Determine final path
     let finalPath = path.join(normalizedDir, originalName);
+    assertPathMutable(finalPath, { operation: 'upload' });
 
     if (fs.existsSync(finalPath) && onConflict !== 'overwrite') {
       if (onConflict === 'fail') {
@@ -1271,12 +1361,13 @@ export class FilesystemService {
 
     const metadataKernel = notebook.metadata?.kernelspec?.name;
     const kernelspec = metadataKernel || 'python3';
+    const cellIds = resolveJupyterCellIds(notebook.cells || []);
 
     const cells: NebulaCell[] = notebook.cells.map((nbCell, i) => {
       let cellType: 'code' | 'markdown' = nbCell.cell_type === 'markdown' ? 'markdown' : 'code';
 
       const content = this.sourceToString(nbCell.source);
-      const cellId = nbCell.metadata?.nebula_id || (nbCell as { id?: string }).id || `cell-${i}`;
+      const cellId = cellIds[i];
       const outputs = this.convertOutputs(nbCell.outputs, i);
 
       const cell: NebulaCell = {
@@ -1354,11 +1445,14 @@ export class FilesystemService {
     notebookMetadata?: Record<string, unknown>
   ): Promise<SaveNotebookResult> {
     const normalizedPath = this.normalizePath(notebookPath);
+    assertPathMutable(normalizedPath, { operation: 'save' });
 
     const formatAdapter = getFormatAdapter(normalizedPath);
     if (formatAdapter) {
       return await this.saveTextNotebookCells(formatAdapter, normalizedPath, cells, kernelName, notebookMetadata);
     }
+
+    validateJupyterCellIds(cells);
 
     // Load existing notebook metadata if file exists.
     // Prefer a fast scan for the top-level metadata object so we avoid
@@ -1400,10 +1494,14 @@ export class FilesystemService {
     if (sentinelCells.length > 0) {
       try {
         const existing = JSON.parse(await fsp.readFile(normalizedPath, 'utf-8')) as JupyterNotebook;
-        for (const jc of existing.cells || []) {
-          const nid = jc.metadata?.nebula_id;
-          if (nid) priorOutputs.set(String(nid), { outputs: jc.outputs || [], execution_count: jc.execution_count ?? null });
-        }
+        const existingCells = existing.cells || [];
+        const existingCellIds = resolveJupyterCellIds(existingCells);
+        existingCells.forEach((jc, index) => {
+          priorOutputs.set(existingCellIds[index], {
+            outputs: jc.outputs || [],
+            execution_count: jc.execution_count ?? null,
+          });
+        });
       } catch {
         return { success: false, mtime: 0, needsFull: true };
       }
@@ -1413,10 +1511,10 @@ export class FilesystemService {
     }
 
     const nbCells: JupyterCell[] = cells.map((cell) => {
-      const preservedMetadata = cell._metadata || {};
+      const preservedMetadata = { ...(cell._metadata || {}) };
+      delete preservedMetadata.nebula_id;
       const cellMetadata: JupyterCell['metadata'] = {
         ...preservedMetadata,
-        nebula_id: cell.id,
       };
 
       if (cell.scrolled !== undefined) {
@@ -1427,6 +1525,7 @@ export class FilesystemService {
       }
 
       const nbCell: JupyterCell = {
+        id: cell.id,
         cell_type: cell.type,
         source: this.stringToSource(cell.content),
         metadata: cellMetadata,
@@ -1504,6 +1603,7 @@ export class FilesystemService {
     session?: Record<string, unknown>,
     notebookMetadata?: Record<string, unknown>
   ): Promise<SaveNotebookResult> {
+    assertPathMutable(this.normalizePath(notebookPath), { operation: 'save' });
     return await this.withWriteLock(notebookPath, async () => {
       const normalizedPath = this.normalizePath(notebookPath);
       const historyPath = history ? this.getHistoryPath(notebookPath) : undefined;
@@ -1671,6 +1771,7 @@ export class FilesystemService {
     notebookPath: string,
     metadataUpdates: Record<string, unknown>
   ): Promise<{ success: boolean; changed?: boolean; mtime?: number; error?: string }> {
+    assertPathMutable(this.normalizePath(notebookPath), { operation: 'update metadata for' });
     return await this.withWriteLock(notebookPath, async () => {
       const normalizedPath = this.normalizePath(notebookPath);
 
@@ -1783,6 +1884,7 @@ export class FilesystemService {
     notebookPath: string,
     permitted: boolean
   ): Promise<{ success: boolean; error?: string; status?: AgentPermissionSnapshot; mtime?: number }> {
+    assertPathMutable(this.normalizePath(notebookPath), { operation: 'change permissions for' });
     return await this.withWriteLock(notebookPath, async () => {
       const normalizedPath = this.normalizePath(notebookPath);
 
@@ -1957,6 +2059,7 @@ export class FilesystemService {
    * Save operation history for a notebook
    */
   async saveHistory(notebookPath: string, history: unknown[]): Promise<boolean> {
+    assertPathMutable(this.normalizePath(notebookPath), { operation: 'write history for' });
     const historyPath = this.getHistoryPath(notebookPath);
 
     // Create .nebula directory if needed
@@ -2030,6 +2133,10 @@ export class FilesystemService {
    * of corrupting).
    */
   private reconcileExternalTextEdits(notebookPath: string, history: unknown[]): unknown[] {
+    // Reconciliation is normally a helpful read-time repair, but it persists
+    // history/last-save sidecars. A sealed snapshot must stay byte-for-byte
+    // immutable even when reached through an otherwise read-only API.
+    if (classifySealedPath(this.normalizePath(notebookPath)).sealed) return history;
     const adapter = getFormatAdapter(notebookPath);
     if (!adapter || history.length === 0) return history;
     const normalizedPath = this.normalizePath(notebookPath);
@@ -2151,6 +2258,7 @@ export class FilesystemService {
    * Save session state for a notebook
    */
   async saveSession(notebookPath: string, session: Record<string, unknown>): Promise<boolean> {
+    assertPathMutable(this.normalizePath(notebookPath), { operation: 'write session state for' });
     const sessionPath = this.getSessionPath(notebookPath);
 
     // Create .nebula directory if needed

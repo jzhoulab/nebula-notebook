@@ -284,7 +284,8 @@ describe('conflictService', () => {
         path: '/path/to/file.ipynb',
         cells: remoteCells,
         mtime: 5000,
-        kernelspec: 'python3'
+        kernelspec: 'python3',
+        access: { read_only: false }
       });
 
       const result = await loadRemoteVersion('/path/to/file.ipynb');

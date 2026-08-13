@@ -61,9 +61,8 @@ exports[`ipynb serialization baseline (must never change) > produces the exact o
     {
       "cell_type": "code",
       "execution_count": 3,
-      "metadata": {
-        "nebula_id": "abc123",
-      },
+      "id": "abc123",
+      "metadata": {},
       "outputs": [
         {
           "name": "stdout",
@@ -85,9 +84,8 @@ exports[`ipynb serialization baseline (must never change) > produces the exact o
     },
     {
       "cell_type": "markdown",
-      "metadata": {
-        "nebula_id": "def456",
-      },
+      "id": "def456",
+      "metadata": {},
       "source": [
         "# Analysis
 ",
@@ -99,11 +97,11 @@ exports[`ipynb serialization baseline (must never change) > produces the exact o
     {
       "cell_type": "code",
       "execution_count": 4,
+      "id": "ghi789",
       "metadata": {
         "custom_key": {
           "nested": true,
         },
-        "nebula_id": "ghi789",
         "scrolled": true,
         "scrolled_height": 240,
       },

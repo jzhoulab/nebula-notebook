@@ -94,6 +94,15 @@ export interface KernelOutput {
   mimeBundle?: MimeBundle;
   metadata?: Record<string, JsonValue>;
   preferredMimeType?: string;
+  /** Exact protocol shape retained for immutable replay sealing. */
+  jupyterOutputType?: 'execute_result' | 'display_data';
+  /** Present for execute_result protocol messages. */
+  jupyterExecutionCount?: number;
+}
+
+export interface InternalExecutionOptions {
+  /** Server-authored probes use false so they cannot perturb notebook counts. */
+  storeHistory?: false;
 }
 
 export interface SequencedKernelOutput {
@@ -130,6 +139,14 @@ export interface StartKernelOptions {
   kernelName?: string;
   cwd?: string;
   filePath?: string;
+  /**
+   * Server-only launch hardening. This is intentionally not accepted by the
+   * public kernel HTTP route; replay sealing uses it to exclude user-site
+   * packages before the Python process starts.
+   */
+  internalEnv?: {
+    PYTHONNOUSERSITE?: '1';
+  };
 }
 
 /**

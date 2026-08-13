@@ -47,6 +47,7 @@ vi.mock('../../services/fileService', () => ({
   setActiveNotebookPath: vi.fn(),
   getActiveNotebookDir: vi.fn().mockReturnValue(null),
   seedOutputsBaseline: vi.fn(),
+  downloadFile: vi.fn().mockResolvedValue(undefined),
   getNotebookData: vi.fn().mockResolvedValue({
     path: '/test/notebook.ipynb',
     cells: [
@@ -156,7 +157,7 @@ vi.mock('../NotebookBreadcrumb', () => ({
 vi.mock('../Cell', async () => {
   const React = await import('react');
   return {
-  Cell: ({ cell, index, isActive, isHighlighted, onClick, onDelete, onMove, onChangeType, onRun, requestedFocusMode, onFocusModeApplied }: any) => {
+  Cell: ({ cell, index, isActive, isHighlighted, isLocked, onClick, onDelete, onMove, onChangeType, onRun, requestedFocusMode, onFocusModeApplied }: any) => {
     const ref = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
       if (requestedFocusMode === 'cell') {
@@ -173,18 +174,19 @@ vi.mock('../Cell', async () => {
       data-cell-type={cell.type}
       data-active={isActive}
       data-highlighted={String(!!isHighlighted)}
+      data-locked={String(!!isLocked)}
       onClick={(e: React.MouseEvent) => onClick(cell.id, e)}
     >
       <span data-testid={`cell-index-${index}`}>#{index + 1}</span>
       <div data-testid={`cell-content-${cell.id}`}>{cell.content}</div>
       <div data-testid={`cell-output-count-${cell.id}`}>{cell.outputs.length}</div>
       <div data-testid={`cell-executing-${cell.id}`}>{cell.isExecuting ? 'true' : 'false'}</div>
-      <button data-testid={`delete-${cell.id}`} onClick={(e) => { e.stopPropagation(); onDelete(cell.id); }}>Delete</button>
-      <button data-testid={`move-up-${cell.id}`} onClick={(e) => { e.stopPropagation(); onMove(cell.id, 'up'); }}>Up</button>
-      <button data-testid={`move-down-${cell.id}`} onClick={(e) => { e.stopPropagation(); onMove(cell.id, 'down'); }}>Down</button>
-      <button data-testid={`to-markdown-${cell.id}`} onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'markdown'); }}>M</button>
-      <button data-testid={`to-code-${cell.id}`} onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'code'); }}>Y</button>
-      <button data-testid={`run-${cell.id}`} onClick={(e) => { e.stopPropagation(); onRun(cell.id); }}>Run</button>
+      <button disabled={isLocked} data-testid={`delete-${cell.id}`} onClick={(e) => { e.stopPropagation(); onDelete(cell.id); }}>Delete</button>
+      <button disabled={isLocked} data-testid={`move-up-${cell.id}`} onClick={(e) => { e.stopPropagation(); onMove(cell.id, 'up'); }}>Up</button>
+      <button disabled={isLocked} data-testid={`move-down-${cell.id}`} onClick={(e) => { e.stopPropagation(); onMove(cell.id, 'down'); }}>Down</button>
+      <button disabled={isLocked} data-testid={`to-markdown-${cell.id}`} onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'markdown'); }}>M</button>
+      <button disabled={isLocked} data-testid={`to-code-${cell.id}`} onClick={(e) => { e.stopPropagation(); onChangeType(cell.id, 'code'); }}>Y</button>
+      <button disabled={isLocked} data-testid={`run-${cell.id}`} onClick={(e) => { e.stopPropagation(); onRun(cell.id); }}>Run</button>
     </div>
     );
   },
@@ -197,6 +199,7 @@ import { NotificationProvider } from '../NotificationSystem';
 import { kernelService } from '../../services/kernelService';
 import * as fileService from '../../services/fileService';
 import { useOperationHandler } from '../../hooks/useOperationHandler';
+import { useAutosave } from '../../hooks/useAutosave';
 
 // Helper to render Notebook with required providers
 const renderNotebook = () => {
@@ -653,6 +656,66 @@ describe('Notebook', () => {
       expect(vi.mocked(fileService.saveActiveFileId)).toHaveBeenCalledWith(
         '/endosome/archive/bioinformatics/Zhou_lab/shared/jzhou/Code/dnase/alphagenome_official_eval_v2.ipynb'
       );
+    });
+  });
+
+  describe('sealed evidence deep links', () => {
+    it('uses server-derived access to lock controls, preserve outputs, and focus the canonical cell id', async () => {
+      const sealedPath = '/test/run/.nebula/seals/seal-123/notebook.ipynb';
+      window.history.replaceState(
+        {},
+        '',
+        `/?file=${encodeURIComponent(sealedPath)}&mode=sealed&seal=seal-123&cell=target-cell`,
+      );
+      vi.mocked(fileService.getFileContentWithMtime).mockResolvedValue({
+        path: sealedPath,
+        cells: [
+          { id: 'first-cell', type: 'code', content: 'x = 1', outputs: [], isExecuting: false },
+          {
+            id: 'target-cell',
+            type: 'code',
+            content: 'print(result)',
+            outputs: [{ id: 'output-1', type: 'stdout', content: '42', timestamp: Date.now() }],
+            isExecuting: false,
+          },
+        ],
+        kernelspec: 'python3',
+        mtime: Date.now() / 1000,
+        access: { read_only: true, reason: 'sealed', seal_id: 'seal-123' },
+      } as Awaited<ReturnType<typeof fileService.getFileContentWithMtime>>);
+
+      renderNotebook();
+
+      expect(await screen.findByText('Sealed evidence')).toBeInTheDocument();
+      expect(screen.getByText('seal-123')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByTestId('cell-target-cell')).toHaveAttribute('data-locked', 'true');
+        expect(screen.getByTestId('cell-target-cell')).toHaveAttribute('data-active', 'true');
+        expect(document.activeElement).toBe(screen.getByTestId('cell-target-cell'));
+      });
+      expect(screen.getByTestId('cell-output-count-target-cell')).toHaveTextContent('1');
+      expect(screen.getByTestId('run-target-cell')).toBeDisabled();
+      expect(screen.getByTestId('delete-target-cell')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Save notebook' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Run all cells' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Download snapshot' })).toBeEnabled();
+      expect(vi.mocked(fileService.getFileContentWithMtime)).toHaveBeenCalledWith(
+        sealedPath,
+        { sealId: 'seal-123' },
+      );
+      expect(vi.mocked(useAutosave).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: false });
+      expect(kernelService.getOrCreateKernelForFile).not.toHaveBeenCalled();
+      expect(window.location.search).toContain('mode=sealed');
+      expect(window.location.search).toContain('cell=target-cell');
+    });
+
+    it('does not trust mode=sealed when the server classifies the notebook as mutable', async () => {
+      window.history.replaceState({}, '', '/?file=%2Ftest%2Fnotebook.ipynb&mode=sealed');
+      renderNotebook();
+
+      await screen.findByTestId('cell-cell-1');
+      expect(screen.queryByText('Sealed evidence')).not.toBeInTheDocument();
+      expect(screen.getByTestId('cell-cell-1')).toHaveAttribute('data-locked', 'false');
     });
   });
 

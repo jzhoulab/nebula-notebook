@@ -210,7 +210,9 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   // without needing their own TOTP flow. Loopback-only: those tools run on
   // this machine (or reach it through an ssh tunnel, which lands on
   // loopback); a token-less request from the network gets no free ride.
-  if (!token && isLoopback(request.ip)) {
+  // Browser requests carry Origin. Never let a cross-origin page inherit the
+  // machine-local CLI/MCP credential merely because the TCP peer is loopback.
+  if (!token && isLoopback(request.ip) && request.headers.origin === undefined) {
     token = readSessionToken();
   }
 

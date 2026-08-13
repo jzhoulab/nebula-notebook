@@ -8,12 +8,25 @@ import { NebulaCell } from '../fs/types';
 import { operationRouter } from '../notebook/operation-router';
 import { HeadlessOperationHandler } from '../notebook/headless-handler';
 import { kernelService } from './kernel';
+import {
+  classifySealedPath,
+  sealedErrorBody,
+  SealedPathLockedError,
+} from '../fs/sealed-path';
+import replaySealRoutes from './replay-seal';
 
 // Initialize headless handler with kernel service for cell execution
 const headlessHandler = new HeadlessOperationHandler(fsService, operationRouter, kernelService);
 operationRouter.setHeadlessHandler(headlessHandler);
 
+function sendSealedError(reply: FastifyReply, error: unknown): FastifyReply | null {
+  if (!(error instanceof SealedPathLockedError)) return null;
+  return reply.code(error.statusCode).send(sealedErrorBody(error));
+}
+
 export default async function notebookRoutes(fastify: FastifyInstance) {
+  await fastify.register(replaySealRoutes);
+
   /**
    * Get cell metadata schema
    */
@@ -54,6 +67,16 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ detail: 'path query parameter is required' });
       }
       const normalizedPath = fsService.normalizePath(filePath);
+      const sealInfo = classifySealedPath(normalizedPath);
+      const sealHint = (request.query as any).seal as string | undefined;
+      if (sealHint && (!sealInfo.sealed || sealInfo.sealId !== sealHint)) {
+        return reply.code(409).send({
+          code: 'seal_mismatch',
+          detail: sealInfo.sealed
+            ? `Seal hint ${sealHint} does not match canonical path seal ${sealInfo.sealId}`
+            : `Seal hint ${sealHint} does not identify the requested notebook path`,
+        });
+      }
       const result = await fsService.getNotebookCellsWithKernel(filePath);
       return reply.send({
         path: normalizedPath,
@@ -61,6 +84,9 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
         metadata: result.metadata,
         kernelspec: result.kernelspec,
         mtime: result.mtime,
+        access: sealInfo.sealed
+          ? { read_only: true, reason: 'sealed', seal_id: sealInfo.sealId }
+          : { read_only: false },
       });
     } catch (err) {
       if (err instanceof Error && err.message.includes('not found')) {
@@ -108,6 +134,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
 
       return reply.send({ status: 'ok', path: filePath, mtime: result.mtime });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -125,6 +153,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
       const history = await fsService.loadHistory(notebookPath);
       return reply.send({ notebook_path: notebookPath, history });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -142,6 +172,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
       await fsService.saveHistory(notebook_path, history || []);
       return reply.send({ status: 'ok', notebook_path });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -176,6 +208,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
       await fsService.saveSession(notebook_path, session || {});
       return reply.send({ status: 'ok', notebook_path });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -204,6 +238,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
         ...(result.status || await fsService.getAgentPermissionStatusAsync(notebook_path)),
       });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -296,8 +332,13 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
       }
 
       const result = await operationRouter.applyOperation(operation);
+      if (result.code === 'sealed_read_only') {
+        return reply.code(403).send(result);
+      }
       return reply.send(result);
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.send({ success: false, error: message });
     }
@@ -322,6 +363,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
         full_width: nebula.full_width === true,
       });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -371,6 +414,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
         mtime: updateResult.mtime,
       });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -400,6 +445,8 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
 
       return reply.send({ status: 'ok', notebook_path: filePath, mtime: updateResult.mtime });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }

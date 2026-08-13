@@ -160,6 +160,31 @@ describe('Cell', () => {
       fireEvent.click(screen.getByText('Text'));
       expect(onChangeType).toHaveBeenCalledWith('test-cell-1', 'markdown');
     });
+
+    it('disables every mutating and execution action while locked', () => {
+      const onRun = vi.fn();
+      const onChangeType = vi.fn();
+      const onDelete = vi.fn();
+      const onMove = vi.fn();
+      renderCell({
+        ...defaultProps,
+        isLocked: true,
+        onRun,
+        onChangeType,
+        onDelete,
+        onMove,
+      });
+
+      expect(screen.getByTitle('Read-only notebook')).toBeDisabled();
+      expect(screen.getAllByTitle('Read-only notebook: cannot change cell type')).toHaveLength(2);
+      expect(screen.getAllByTitle('Read-only notebook: cannot change cell type').every(button => button.hasAttribute('disabled'))).toBe(true);
+      expect(screen.getByTitle('Read-only notebook: cannot delete cell')).toBeDisabled();
+      fireEvent.click(screen.getByTitle('Read-only notebook'));
+      expect(onRun).not.toHaveBeenCalled();
+      expect(onChangeType).not.toHaveBeenCalled();
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(onMove).not.toHaveBeenCalled();
+    });
   });
 
   describe('run button tooltip', () => {

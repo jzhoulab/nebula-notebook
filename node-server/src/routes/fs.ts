@@ -8,6 +8,12 @@ import * as path from 'path';
 import * as os from 'os';
 import { privateTmpDir } from '../private-tmp';
 import * as nodeFs from 'fs';
+import { assertPathMutable, sealedErrorBody, SealedPathLockedError } from '../fs/sealed-path';
+
+function sendSealedError(reply: FastifyReply, error: unknown): FastifyReply | null {
+  if (!(error instanceof SealedPathLockedError)) return null;
+  return reply.code(error.statusCode).send(sealedErrorBody(error));
+}
 
 export default async function fsRoutes(fastify: FastifyInstance) {
   /**
@@ -135,6 +141,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       fsService.writeFile(filePath, content, file_type);
       return reply.send({ status: 'ok', path: filePath });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
     }
@@ -152,6 +160,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       const info = fsService.createFile(filePath, is_directory);
       return reply.send({ status: 'ok', file: info });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       if (err instanceof Error && err.message.includes('exists')) {
         return reply.code(409).send({ detail: err.message });
       } else {
@@ -173,6 +183,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       fsService.deleteFile(filePath);
       return reply.send({ status: 'ok' });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       if (err instanceof Error && err.message.includes('not found')) {
         return reply.code(404).send({ detail: err.message });
       } else {
@@ -194,6 +206,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       const info = fsService.renameFile(old_path, new_path);
       return reply.send({ status: 'ok', file: info });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       if (err instanceof Error) {
         if (err.message.includes('not found')) {
           return reply.code(404).send({ detail: err.message });
@@ -220,6 +234,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       const info = fsService.duplicateFile(filePath);
       return reply.send({ status: 'ok', file: info });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       if (err instanceof Error) {
         if (err.message.includes('not found')) {
           return reply.code(404).send({ detail: err.message });
@@ -334,6 +350,9 @@ export default async function fsRoutes(fastify: FastifyInstance) {
       if (!destPath) {
         return reply.code(400).send({ detail: 'path is required' });
       }
+      // Reject sealed destinations before buffering the multipart payload to a
+      // temp file. FilesystemService repeats this at the actual write boundary.
+      assertPathMutable(fsService.normalizePath(destPath), { operation: 'upload into' });
 
       // Save the uploaded file to a temp location first
       const tmpPath = path.join(privateTmpDir('uploads'), `upload-${Date.now()}-${path.basename(data.filename || 'file')}`);
@@ -356,6 +375,8 @@ export default async function fsRoutes(fastify: FastifyInstance) {
 
       return reply.send({ status: 'ok', file: info });
     } catch (err) {
+      const sealed = sendSealedError(reply, err);
+      if (sealed) return sealed;
       if (err instanceof Error) {
         if (err.message.includes('already exists')) {
           return reply.code(409).send({ detail: err.message });

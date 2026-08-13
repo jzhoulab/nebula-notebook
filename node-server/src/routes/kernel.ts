@@ -30,6 +30,11 @@ import {
 } from '../cluster/kernel-proxy';
 import { serverRegistry } from '../cluster/server-registry';
 import { allocationService } from '../scheduler/allocation-service';
+import {
+  assertPathMutable,
+  sealedErrorBody,
+  SealedPathLockedError,
+} from '../fs/sealed-path';
 
 // Track all WebSocket connections per kernel session for broadcasting
 const sessionWebSockets: Map<string, Set<WebSocket>> = new Map();
@@ -113,6 +118,12 @@ function sendProvisionError(reply: FastifyReply, err: unknown): boolean {
     : err.code === 'externally_managed' || err.code === 'needs_ipykernel' ? 422
     : 500;
   reply.code(status).send({ detail: err.message, code: err.code, install_hint: err.installHint });
+  return true;
+}
+
+function sendSealedError(reply: FastifyReply, err: unknown): boolean {
+  if (!(err instanceof SealedPathLockedError)) return false;
+  reply.code(err.statusCode).send(sealedErrorBody(err));
   return true;
 }
 
@@ -495,6 +506,9 @@ export default async function kernelRoutes(fastify: FastifyInstance) {
   fastify.post('/kernels/start', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { kernel_name = 'python3', cwd, file_path, server_id, client_origin } = request.body as any;
+      if (file_path) {
+        assertPathMutable(kernelService.normalizeNotebookPath(file_path), { operation: 'start a kernel for' });
+      }
 
       const localServerId = serverRegistry.getLocalServerId();
       // Check if we should start on a remote server
@@ -530,6 +544,7 @@ export default async function kernelRoutes(fastify: FastifyInstance) {
       }
       return reply.send({ session_id: sessionId, kernel_name, server_id: localServerId, mtime: notebookMtime });
     } catch (err) {
+      if (sendSealedError(reply, err)) return reply;
       if (sendProvisionError(reply, err)) return reply;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });
@@ -568,6 +583,7 @@ export default async function kernelRoutes(fastify: FastifyInstance) {
       }
 
       const normalizedFilePath = kernelService.normalizeNotebookPath(file_path);
+      assertPathMutable(normalizedFilePath, { operation: 'start a kernel for' });
       let effectiveKernelName = kernel_name as string | undefined;
       let effectiveServerId = server_id as string | undefined;
       const localServerId = serverRegistry.getLocalServerId();
@@ -652,6 +668,7 @@ export default async function kernelRoutes(fastify: FastifyInstance) {
         mtime: metadataResult.mtime,
       });
     } catch (err) {
+      if (sendSealedError(reply, err)) return reply;
       if (sendProvisionError(reply, err)) return reply;
       const message = err instanceof Error ? err.message : 'Unknown error';
       return reply.code(500).send({ detail: message });

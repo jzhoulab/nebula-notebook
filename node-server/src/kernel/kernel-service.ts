@@ -20,6 +20,7 @@ import {
   KernelOutput,
   ExecutionResult,
   ExecutionQueueInfo,
+  InternalExecutionOptions,
   StartKernelOptions,
   SessionInfo,
   KernelServiceConfig,
@@ -699,6 +700,18 @@ export class KernelService {
    */
   async startKernel(options: StartKernelOptions = {}): Promise<string> {
     const kernelName = options.kernelName || 'python3';
+    if (
+      options.internalEnv
+      && (
+        Object.keys(options.internalEnv).some((key) => key !== 'PYTHONNOUSERSITE')
+        || (
+          options.internalEnv.PYTHONNOUSERSITE !== undefined
+          && options.internalEnv.PYTHONNOUSERSITE !== '1'
+        )
+      )
+    ) {
+      throw new Error('Unsupported internal kernel environment override');
+    }
 
     // env:<pythonPath> kernels raw-launch a Python environment directly
     // (VSCode-style) — no kernelspec registration involved. Preflight here so
@@ -750,7 +763,7 @@ export class KernelService {
 
     const proc = spawn(argv[0], argv.slice(1), {
       cwd,
-      env: { ...process.env, ...spec.env },
+      env: { ...process.env, ...spec.env, ...options.internalEnv },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -1575,7 +1588,8 @@ export class KernelService {
     code: string,
     onOutput: (output: KernelOutput, cellId?: string | null) => Promise<void>,
     onQueueInfo?: (info: ExecutionQueueInfo) => void,
-    cellId?: string | null
+    cellId?: string | null,
+    internalOptions?: InternalExecutionOptions,
   ): Promise<ExecutionResult> {
     // Polyfill `!command` lines for kernels whose language lacks them (see
     // rewriteShellLines) — rewritten code still runs IN the kernel process,
@@ -1601,7 +1615,7 @@ export class KernelService {
           for (const o of stored) {
             await onOutput(o, cellId);
           }
-        });
+        }, internalOptions?.storeHistory !== false);
         return { ...result, ...queueInfo };
       } catch (err) {
         const errorMsg = this.formatExecutionError(err);
@@ -1680,7 +1694,8 @@ export class KernelService {
   private async executeCodeInternal(
     sessionId: string,
     code: string,
-    onOutput: (output: KernelOutput) => Promise<void>
+    onOutput: (output: KernelOutput) => Promise<void>,
+    storeHistory = true,
   ): Promise<ExecutionResult> {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -1717,7 +1732,7 @@ export class KernelService {
       const content = {
         code,
         silent: false,
-        store_history: true,
+        store_history: storeHistory,
         user_expressions: {},
         allow_stdin: false,
         stop_on_error: true,
@@ -1761,6 +1776,10 @@ export class KernelService {
             (msgContent.metadata as Record<string, unknown>) || undefined,
           );
           if (output) {
+            output.jupyterOutputType = msgType;
+            if (msgType === 'execute_result' && Number.isSafeInteger(msgContent.execution_count)) {
+              output.jupyterExecutionCount = msgContent.execution_count as number;
+            }
             await onOutput(output);
           }
         } else if (msgType === 'error') {

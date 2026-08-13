@@ -397,6 +397,16 @@ export interface NotebookData {
   cells: Cell[];
   kernelspec: string;  // kernel name from notebook metadata
   mtime: number;       // modification time for conflict detection
+  access: NotebookAccess;
+}
+
+export type NotebookAccess =
+  | { read_only: false }
+  | { read_only: true; reason: 'sealed'; seal_id: string };
+
+export interface NotebookReadOptions {
+  /** Evidence-link assertion; the server verifies it against the canonical path. */
+  sealId?: string;
 }
 
 /**
@@ -413,19 +423,28 @@ export const getNotebookCells = async (path: string): Promise<Cell[]> => {
  * Results are cached briefly (500ms) so React Strict Mode double-mounts
  * reuse the same cell objects instead of creating a second copy (~500MB saved).
  */
-let _notebookDataCache: { requestPath: string; canonicalPath: string; data: NotebookData; ts: number } | null = null;
+let _notebookDataCache: {
+  requestPath: string;
+  canonicalPath: string;
+  sealId?: string;
+  data: NotebookData;
+  ts: number;
+} | null = null;
 
-export const getNotebookData = async (path: string): Promise<NotebookData> => {
+export const getNotebookData = async (path: string, options: NotebookReadOptions = {}): Promise<NotebookData> => {
   // Return cached result if same path and <500ms old (Strict Mode double-mount)
   if (
     _notebookDataCache &&
     (_notebookDataCache.requestPath === path || _notebookDataCache.canonicalPath === path) &&
+    _notebookDataCache.sealId === options.sealId &&
     Date.now() - _notebookDataCache.ts < 500
   ) {
     return _notebookDataCache.data;
   }
 
-  const response = await fetch(`${API_BASE}/notebook/cells?path=${encodeURIComponent(path)}`);
+  const query = new URLSearchParams({ path });
+  if (options.sealId) query.set('seal', options.sealId);
+  const response = await fetch(`${API_BASE}/notebook/cells?${query.toString()}`);
 
   if (!response.ok) {
     const error = await response.json();
@@ -438,6 +457,9 @@ export const getNotebookData = async (path: string): Promise<NotebookData> => {
     cells: data.cells,
     kernelspec: data.kernelspec || 'python3',
     mtime: data.mtime,
+    access: data.access?.read_only === true && data.access?.reason === 'sealed' && typeof data.access?.seal_id === 'string'
+      ? { read_only: true, reason: 'sealed', seal_id: data.access.seal_id }
+      : { read_only: false },
   };
 
   // Fresh load: drop elision hashes so the next save is full — the in-memory
@@ -449,6 +471,7 @@ export const getNotebookData = async (path: string): Promise<NotebookData> => {
   _notebookDataCache = {
     requestPath: path,
     canonicalPath: result.path,
+    sealId: options.sealId,
     data: result,
     ts: Date.now(),
   };
@@ -568,9 +591,12 @@ export const getFiles = async (): Promise<NotebookMetadata[]> => {
 /**
  * Get file content with mtime - for conflict detection
  */
-export const getFileContentWithMtime = async (id: string): Promise<NotebookData | null> => {
+export const getFileContentWithMtime = async (
+  id: string,
+  options: NotebookReadOptions = {},
+): Promise<NotebookData | null> => {
   try {
-    return await getNotebookData(id);
+    return await getNotebookData(id, options);
   } catch (e) {
     console.error('Failed to get file content:', e);
     return null;

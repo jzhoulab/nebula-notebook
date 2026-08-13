@@ -31,6 +31,7 @@ interface ShortcutCell {
 }
 
 export interface NotebookShortcutDeps {
+  readOnly?: boolean;
   // Live notebook state (shadow refs owned by Notebook)
   cellsRef: React.RefObject<ShortcutCell[]>;
   selectedCellIdsRef: React.RefObject<Set<string>>;
@@ -88,6 +89,7 @@ export function useNotebookKeyboardShortcuts(deps: NotebookShortcutDeps): void {
       // Ctrl+S: Save (works everywhere) - uses handleManualSave for redo confirmation
       if ((e.metaKey || e.ctrlKey) && key === 's') {
         e.preventDefault();
+        if (d.readOnly) return;
         d.handleManualSaveRef.current().catch(err => {
           console.error('Save failed:', err);
         });
@@ -145,6 +147,7 @@ export function useNotebookKeyboardShortcuts(deps: NotebookShortcutDeps): void {
       // Ctrl+`: Toggle terminal (works everywhere)
       if ((e.metaKey || e.ctrlKey) && key === '`') {
         e.preventDefault();
+        if (d.readOnly) return;
         d.setIsTerminalOpen(prev => !prev);
         return;
       }
@@ -154,6 +157,17 @@ export function useNotebookKeyboardShortcuts(deps: NotebookShortcutDeps): void {
       // - Cell mode: Cell div is focused (Notebook handles Jupyter-style shortcuts)
       const isInEditor = target.closest?.('.cm-editor') !== null;
       const focusedCellId = target.getAttribute?.('data-cell-id') ?? null;
+
+      if (d.readOnly) {
+        const attemptsMutation =
+          ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) ||
+          e.key === 'Enter' || e.key === 'Delete' || e.key === 'Backspace' ||
+          ['a', 'b', 'm', 'y', 'x', 'v', 'e', 'd', 'z', '0', 'i'].includes(key);
+        if (attemptsMutation) {
+          e.preventDefault();
+          return;
+        }
+      }
 
       // Skip if typing in input fields or editing in CodeMirror
       if (isInput || isInEditor) return;

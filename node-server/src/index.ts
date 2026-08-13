@@ -63,6 +63,8 @@ import { setupNotebookWebSocket } from './notebook/notebook-websocket';
 // Idle auto-release (client mode, opt-in via NEBULA_IDLE_EXIT_MINUTES)
 import { startIdleExitMonitor } from './idle-exit';
 import { ptyManager } from './terminal/pty-manager';
+import { resolveBindHost, resolveNoAuthBindHost } from './server/bind-host';
+import { isTrustedBrowserOrigin } from './server/cors-origin';
 
 const PORT = process.env.PORT || process.env.NODE_SERVER_PORT || 3000;
 const DEV_MODE = process.env.DEV_MODE === 'true' || process.argv.includes('--dev');
@@ -116,6 +118,7 @@ const getArgValue = (name: string): string | null => {
   }
   return null;
 };
+let BIND_HOST = resolveBindHost(process.argv, process.env);
 const WORKDIR = getArgValue('--workdir') || process.env.NEBULA_WORKDIR || process.env.npm_config_workdir;
 const PRESERVE_KERNELS = resolveBooleanFlag(
   ['--preserve-kernels', '--preserve-kernel'],
@@ -300,18 +303,18 @@ async function createApp(): Promise<FastifyInstance> {
   await fastify.register(fastifyCors, {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true); // non-browser client or same-origin
-      if (extraOrigins.includes(origin)) return cb(null, true);
-      try {
-        const { hostname } = new URL(origin);
-        if (hostname === 'localhost' || hostname === '::1' || hostname === '127.0.0.1' || hostname.startsWith('127.')) {
-          return cb(null, true);
-        }
-      } catch { /* malformed Origin — treat as disallowed */ }
+      if (isTrustedBrowserOrigin(origin, extraOrigins)) return cb(null, true);
       cb(null, false); // no CORS headers -> browser blocks the cross-origin page
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-API-Provider'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Key',
+      'X-API-Provider',
+      'Idempotency-Key',
+    ],
   });
 
   // Register multipart support (replaces multer)
@@ -505,7 +508,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const authDisabled =
+  const explicitNoAuth =
     process.argv.includes('--noauth') ||
     process.argv.includes('--no-auth') ||
     process.env.NO_AUTH === 'true' ||
@@ -513,8 +516,14 @@ async function main(): Promise<void> {
     process.env.npm_config_noauth === 'true' ||
     process.env.npm_config_noauth === '1' ||
     process.env.npm_config_no_auth === 'true' ||
-    process.env.npm_config_no_auth === '1' ||
-    CLIENT_MODE;
+    process.env.npm_config_no_auth === '1';
+  if (explicitNoAuth) {
+    // Loopback default when no host was chosen; refuses an explicit
+    // non-loopback host. Client mode is exempt: it binds the network on
+    // purpose (login node must reach it) behind the cluster secret.
+    BIND_HOST = resolveNoAuthBindHost(process.argv, process.env);
+  }
+  const authDisabled = explicitNoAuth || CLIENT_MODE;
 
   if (authDisabled) {
     authService.disableAuth();
@@ -561,7 +570,7 @@ async function main(): Promise<void> {
   await setupStaticServing(fastify);
 
   // Start HTTP server on main port
-  await fastify.listen({ port: Number(PORT), host: '0.0.0.0' });
+  await fastify.listen({ port: Number(PORT), host: BIND_HOST });
 
   // Get the raw Node.js server for WebSocket handling
   const server = fastify.server;
@@ -630,6 +639,7 @@ async function main(): Promise<void> {
       '   Nebula Notebook is running',
       '',
       `   Open:      http://localhost:${PORT}`,
+      `   Bind:      ${BIND_HOST}:${PORT}`,
       `   Network:   http://${host}:${PORT}`,
       `   Files:     ${rootDir}`,
       `   Compute:   ${schedulerDetected

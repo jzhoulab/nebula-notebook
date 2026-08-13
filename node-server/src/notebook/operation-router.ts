@@ -16,6 +16,7 @@ import { HeadlessOperationHandler } from './headless-handler';
 import { hashCellContent } from './cell-hash';
 import { isTextNotebookPath } from '../fs/notebook-formats/registry';
 import type { UpdateSummary } from './undoRedoManager';
+import { classifySealedPath } from '../fs/sealed-path';
 
 interface PendingRequest {
   resolve: (value: OperationResult) => void;
@@ -68,6 +69,7 @@ interface AgentLock {
 
 const AGENT_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const UI_STALE_TIMEOUT_MS = 45 * 1000; // 45 seconds
+const READ_ONLY_OPERATIONS = new Set(['readCell', 'readCellOutput', 'searchCells', 'readNotebook', 'getUpdatesSince']);
 
 function normalizeNotebookPath(notebookPath: string): string {
   // IMPORTANT: This must match how the kernel service normalizes file paths.
@@ -368,6 +370,17 @@ export class OperationRouter {
     const opType = operation.type as string;
     const agentId = operation.agentId as string | undefined;
 
+    const sealInfo = classifySealedPath(normalizedPath);
+    if (sealInfo.sealed && !READ_ONLY_OPERATIONS.has(opType)) {
+      return {
+        success: false,
+        error: `Cannot ${opType || 'modify notebook'}: sealed evidence ${sealInfo.sealId} is read-only`,
+        code: 'sealed_read_only',
+        seal_id: sealInfo.sealId,
+        path: sealInfo.canonicalPath,
+      };
+    }
+
     // For createNotebook, route to ANY connected UI (not path-specific)
     // This allows the UI to open the new notebook in a new tab.
     // EXCEPT text notebook formats (.py/.qmd): the UI's create handler only
@@ -434,10 +447,9 @@ export class OperationRouter {
     }
 
     // Enforce agent session for write operations
-    const readOnlyOps = new Set(['readCell', 'readCellOutput', 'searchCells', 'readNotebook', 'getUpdatesSince']);
     const sessionOps = new Set(['startAgentSession', 'endAgentSession']);
     const creationOps = new Set(['createNotebook']); // Operations that create files (don't require session)
-    const isWrite = !readOnlyOps.has(opType) && !sessionOps.has(opType) && !creationOps.has(opType);
+    const isWrite = !READ_ONLY_OPERATIONS.has(opType) && !sessionOps.has(opType) && !creationOps.has(opType);
     if (isWrite) {
       if (!isLocked) {
         console.log(`  -> BLOCKED: Write requires active agent session`);
