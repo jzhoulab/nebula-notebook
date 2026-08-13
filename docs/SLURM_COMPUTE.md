@@ -233,6 +233,33 @@ bounded by the job's cpus/mem/gpus.
   node-env activate path, nebula entry path, walltime cap, allowed partitions.
 - Detection-gated: no scheduler → feature hidden; guide text if `sbatch` missing.
 
+### Multi-arch clusters (aarch64 partitions)
+
+An allocation re-launches this very Nebula install on the compute node, so the
+node binary and native modules must match the node's CPU arch. Partitions whose
+`scontrol` `Arch=` differs from the server's (`scheduler/arch.ts`) launch a
+per-arch runtime configured via env on the main server:
+
+```bash
+export NEBULA_ARM64_NODE_BIN=/shared/node22-arm64/bin/node
+export NEBULA_ARM64_DIR=/shared/nebula-notebook-arm64   # second checkout
+```
+
+Setting up the arm64 checkout (one-time, on shared storage):
+
+1. Download the linux-arm64 Node.js tarball next to the x86 one.
+2. `git clone` the repo to `<DIR>`; run `npm install` in `<DIR>/node-server`
+   **on an arm node** (e.g. `srun -p <arm-partition> …`) so the native modules
+   (zeromq, better-sqlite3, node-pty, esbuild) get arm64 builds.
+3. Build the workspace dep once: `cd <DIR>/packages/autocomplete && npm install
+   && npm run build` (pure tsc — any arch can run this).
+
+Without the env vars, submitting to a cross-arch partition fails fast at
+submit with the fix named — never with an "Exec format error" in the job log.
+Mixed-arch partitions resolve to null (treated as the server's arch). Kernels
+on arm allocations additionally need aarch64 Python environments — x86_64
+conda envs hit the same Exec format error.
+
 ## Lifecycle & failure handling
 
 | Event | Behavior |
