@@ -24,6 +24,7 @@ import {
   UpdateSummary,
 } from './undoRedoManager';
 import { getKernelSpec } from '../kernel/kernelspec';
+import { isProxiedSession, startRemoteKernel, executeRemoteCode } from '../cluster/kernel-proxy';
 
 function copyCellOutput(output: Partial<CellOutput>): CellOutput {
   return {
@@ -1547,12 +1548,17 @@ export class HeadlessOperationHandler {
       };
     }
 
-    // Get or create a kernel session for this notebook
+    // Get or create a kernel session for this notebook. A kernel preference
+    // with a serverId means the notebook is bound to a cluster peer (compute
+    // allocation) — the kernel must live THERE, not on this server: resolving
+    // locally would run cells on the login node, and on a cross-arch
+    // allocation the local ipykernel probe can't even run the env's python.
     const requestedSessionId = (operation.sessionId as string | undefined) ?? (operation.session_id as string | undefined);
-    const preferredKernelName = this.kernelService.getNotebookKernelPreference(notebookPath)?.kernelName || 'python3';
+    const kernelPref = this.kernelService.getNotebookKernelPreference(notebookPath);
+    const preferredKernelName = kernelPref?.kernelName || 'python3';
     let sessionId: string | null = null;
 
-    if (requestedSessionId && this.kernelService.hasSession(requestedSessionId)) {
+    if (requestedSessionId && (this.kernelService.hasSession(requestedSessionId) || isProxiedSession(requestedSessionId))) {
       sessionId = requestedSessionId;
     } else {
       sessionId = this.kernelService.getSessionIdForFile(notebookPath);
@@ -1560,8 +1566,7 @@ export class HeadlessOperationHandler {
 
     if (!sessionId) {
       try {
-        const result = await this.kernelService.getOrCreateKernel(notebookPath, preferredKernelName);
-        sessionId = result.sessionId;
+        sessionId = await this.resolveKernelSession(notebookPath, preferredKernelName, kernelPref?.serverId ?? null);
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         return { success: false, error: `Failed to start kernel: ${errMsg}` };
@@ -1618,9 +1623,11 @@ export class HeadlessOperationHandler {
       // Create execution promise
       const executeTask = async () => {
         try {
-          const result = await this.kernelService!.executeCode(sessionId, code, outputCallback, (info) => {
-            queueInfo = info;
-          }, actualCellId);
+          const result = isProxiedSession(sessionId!)
+            ? await executeRemoteCode(sessionId!, code, outputCallback, actualCellId)
+            : await this.kernelService!.executeCode(sessionId, code, outputCallback, (info) => {
+              queueInfo = info;
+            }, actualCellId);
           executionCount = result.executionCount;
           if (!queueInfo && result.queuePosition !== undefined && result.queueLength !== undefined) {
             queueInfo = { queuePosition: result.queuePosition, queueLength: result.queueLength };
@@ -1809,6 +1816,41 @@ export class HeadlessOperationHandler {
   // Kernel Operations
   // -------------------------------------------------------------------------
 
+  /**
+   * Get-or-create the execution session for a notebook: on its bound cluster
+   * server when a binding exists (proxied session id), locally otherwise.
+   * A dead binding falls back to a fresh local kernel — allocations end
+   * routinely (walltime, cancel), and that fallback is the documented
+   * "falls back to a new kernel on next use" behavior.
+   */
+  private async resolveKernelSession(
+    notebookPath: string,
+    kernelName: string,
+    boundServerId: string | null
+  ): Promise<string> {
+    if (boundServerId) {
+      const remote = await this.startBoundKernel(notebookPath, kernelName, boundServerId);
+      if (remote) return remote.sessionId;
+    }
+    const result = await this.kernelService!.getOrCreateKernel(notebookPath, kernelName);
+    return result.sessionId;
+  }
+
+  /** Start (get-or-create) a kernel on the bound server; null if it is gone. */
+  private async startBoundKernel(
+    notebookPath: string,
+    kernelName: string,
+    serverId: string
+  ): Promise<{ sessionId: string; created?: boolean } | null> {
+    try {
+      return await startRemoteKernel(serverId, kernelName, notebookPath);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Headless] Bound server ${serverId} unavailable (${msg}) — falling back to a local kernel`);
+      return null;
+    }
+  }
+
   private async startKernelOp(operation: Record<string, unknown>, notebookPath: string): Promise<OperationResult> {
     if (!this.kernelService) {
       return { success: false, error: 'Kernel service not available' };
@@ -1817,8 +1859,26 @@ export class HeadlessOperationHandler {
     const kernelName = (operation.kernelName as string) || 'python3';
 
     try {
-      const { sessionId, created } = await this.kernelService.getOrCreateKernel(notebookPath, kernelName);
-      this.kernelService.saveNotebookKernelPreference(notebookPath, kernelName);
+      // Bound notebooks start their kernel on the bound server, and the
+      // binding must survive the preference re-save — dropping serverId here
+      // silently unbound notebooks from their allocations.
+      const boundServerId = this.kernelService.getNotebookKernelPreference(notebookPath)?.serverId ?? null;
+      let sessionId: string;
+      let created: boolean | undefined;
+      if (boundServerId) {
+        const remote = await this.startBoundKernel(notebookPath, kernelName, boundServerId);
+        if (remote) {
+          sessionId = remote.sessionId;
+          created = remote.created;
+          this.kernelService.saveNotebookKernelPreference(notebookPath, kernelName, boundServerId);
+        } else {
+          ({ sessionId, created } = await this.kernelService.getOrCreateKernel(notebookPath, kernelName));
+          this.kernelService.saveNotebookKernelPreference(notebookPath, kernelName);
+        }
+      } else {
+        ({ sessionId, created } = await this.kernelService.getOrCreateKernel(notebookPath, kernelName));
+        this.kernelService.saveNotebookKernelPreference(notebookPath, kernelName);
+      }
       const spec = getKernelSpec(kernelName);
       const metadataResult = await this.fsService.updateNotebookMetadata(notebookPath, {
         kernelspec: {

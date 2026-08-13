@@ -14,6 +14,19 @@ import { HeadlessOperationHandler } from '../notebook/headless-handler';
 import { OperationRouter } from '../notebook/operation-router';
 import { FilesystemService } from '../fs/fs-service';
 
+// Kernel proxy is mocked file-wide: these tests assert WHERE execution is
+// routed (local kernelService vs the bound allocation server), not the wire
+// protocol — that lives in kernel-proxy-execute.test.ts.
+const proxyMocks = vi.hoisted(() => ({
+  startRemoteKernel: vi.fn(),
+  executeRemoteCode: vi.fn(),
+}));
+vi.mock('../cluster/kernel-proxy', () => ({
+  isProxiedSession: (id: string) => id.includes('::'),
+  startRemoteKernel: proxyMocks.startRemoteKernel,
+  executeRemoteCode: proxyMocks.executeRemoteCode,
+}));
+
 describe('HeadlessOperationHandler', () => {
   let handler: HeadlessOperationHandler;
   let fsService: FilesystemService;
@@ -1307,6 +1320,138 @@ describe('HeadlessOperationHandler', () => {
       expect(result.success).toBe(true);
       const read = await handler.applyOperation({ type: 'readCell', notebookPath, cellId: 'c1' });
       expect((read.cell as any).content).toBe('agent update');
+    });
+  });
+
+  describe('execution on a bound allocation server', () => {
+    // `nebula compute use` binds a notebook to an allocation's client server
+    // (kernel preference carries serverId). Headless execution must run THERE
+    // — resolving locally would run cells on the login node (or, on a
+    // cross-arch allocation, fail the local ipykernel probe outright).
+    const boundKernelService = () => ({
+      hasSession: vi.fn(() => false),
+      getSessionIdForFile: vi.fn(() => null),
+      getNotebookKernelPreference: vi.fn(() => ({
+        kernelName: 'env:/gpfs/envs/arm64-py/bin/python',
+        serverId: '10.50.47.89:39549',
+        updatedAt: 1,
+      })),
+      saveNotebookKernelPreference: vi.fn(),
+      getOrCreateKernel: vi.fn(async () => ({ sessionId: 'local-oops', created: true })),
+      executeCode: vi.fn(async () => ({ status: 'ok', executionCount: 1 })),
+    });
+
+    beforeEach(() => {
+      proxyMocks.startRemoteKernel.mockReset();
+      proxyMocks.executeRemoteCode.mockReset();
+    });
+
+    it('executes through the bound server, never starting a local kernel', async () => {
+      const notebookPath = createTestNotebook('bound-exec.ipynb', [
+        { id: 'cell-1', content: 'import platform; print(platform.machine())' },
+      ]);
+      const kernelService = boundKernelService();
+      proxyMocks.startRemoteKernel.mockResolvedValue({ sessionId: '10.50.47.89:39549::sess-9', created: false });
+      proxyMocks.executeRemoteCode.mockImplementation(
+        async (_sid: string, _code: string, onOutput: (o: any) => Promise<void>) => {
+          await onOutput({ type: 'stdout', content: 'aarch64\n' });
+          return { status: 'ok', executionCount: 3 };
+        }
+      );
+
+      handler = new HeadlessOperationHandler(fsService, router, kernelService as unknown as any);
+      const result = await handler.applyOperation({ type: 'executeCell', notebookPath, cellId: 'cell-1' });
+
+      expect(result.success).toBe(true);
+      expect(proxyMocks.startRemoteKernel).toHaveBeenCalledWith(
+        '10.50.47.89:39549',
+        'env:/gpfs/envs/arm64-py/bin/python',
+        notebookPath
+      );
+      expect(proxyMocks.executeRemoteCode).toHaveBeenCalledWith(
+        '10.50.47.89:39549::sess-9',
+        'import platform; print(platform.machine())',
+        expect.any(Function),
+        'cell-1'
+      );
+      expect(kernelService.getOrCreateKernel).not.toHaveBeenCalled();
+      expect(kernelService.executeCode).not.toHaveBeenCalled();
+      const outputs = result.outputs as Array<Record<string, unknown>>;
+      expect(outputs[0].content).toBe('aarch64\n');
+    });
+
+    it('falls back to a local kernel when the bound server is gone (allocation ended)', async () => {
+      const notebookPath = createTestNotebook('bound-gone.ipynb', [
+        { id: 'cell-1', content: 'print(1)' },
+      ]);
+      const kernelService = boundKernelService();
+      proxyMocks.startRemoteKernel.mockRejectedValue(new Error('Server not found: 10.50.47.89:39549'));
+
+      handler = new HeadlessOperationHandler(fsService, router, kernelService as unknown as any);
+      const result = await handler.applyOperation({ type: 'executeCell', notebookPath, cellId: 'cell-1' });
+
+      expect(result.success).toBe(true);
+      expect(kernelService.getOrCreateKernel).toHaveBeenCalledWith(
+        notebookPath,
+        'env:/gpfs/envs/arm64-py/bin/python'
+      );
+      expect(kernelService.executeCode).toHaveBeenCalled();
+    });
+
+    it('reuses a proxied session id passed by the caller', async () => {
+      const notebookPath = createTestNotebook('bound-sid.ipynb', [
+        { id: 'cell-1', content: 'print(1)' },
+      ]);
+      const kernelService = boundKernelService();
+      proxyMocks.executeRemoteCode.mockResolvedValue({ status: 'ok', executionCount: 4 });
+
+      handler = new HeadlessOperationHandler(fsService, router, kernelService as unknown as any);
+      const result = await handler.applyOperation({
+        type: 'executeCell',
+        notebookPath,
+        cellId: 'cell-1',
+        sessionId: '10.50.47.89:39549::sess-77',
+      });
+
+      expect(result.success).toBe(true);
+      expect(proxyMocks.startRemoteKernel).not.toHaveBeenCalled();
+      expect(proxyMocks.executeRemoteCode).toHaveBeenCalledWith(
+        '10.50.47.89:39549::sess-77',
+        'print(1)',
+        expect.any(Function),
+        'cell-1'
+      );
+    });
+
+    it('startKernel keeps the server binding and starts on the bound server', async () => {
+      const notebookPath = createTestNotebook('bound-start.ipynb', [
+        { id: 'cell-1', content: 'print(1)' },
+      ]);
+      const kernelService = boundKernelService();
+      proxyMocks.startRemoteKernel.mockResolvedValue({ sessionId: '10.50.47.89:39549::sess-5', created: true });
+
+      handler = new HeadlessOperationHandler(fsService, router, kernelService as unknown as any);
+      const result = await handler.applyOperation({
+        type: 'startKernel',
+        notebookPath,
+        kernelName: 'env:/gpfs/envs/arm64-py/bin/python',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.sessionId).toBe('10.50.47.89:39549::sess-5');
+      expect(proxyMocks.startRemoteKernel).toHaveBeenCalledWith(
+        '10.50.47.89:39549',
+        'env:/gpfs/envs/arm64-py/bin/python',
+        notebookPath
+      );
+      // The binding must survive the preference re-save — dropping serverId
+      // here is what silently unbound notebooks from their allocations.
+      expect(kernelService.saveNotebookKernelPreference).toHaveBeenCalledWith(
+        notebookPath,
+        'env:/gpfs/envs/arm64-py/bin/python',
+        '10.50.47.89:39549'
+      );
+      expect(kernelService.getOrCreateKernel).not.toHaveBeenCalled();
     });
   });
 

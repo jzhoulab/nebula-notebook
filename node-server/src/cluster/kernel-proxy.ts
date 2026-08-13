@@ -116,6 +116,93 @@ export async function startRemoteKernel(
   };
 }
 
+export interface RemoteExecuteResult {
+  status: string;
+  executionCount: number | null;
+  error?: string;
+  queuePosition?: number;
+  queueLength?: number;
+}
+
+/**
+ * Execute code on a remote kernel and stream its outputs — the headless
+ * counterpart of the UI's WebSocket proxy, speaking the same protocol:
+ * subscribe (`sync_outputs`), `execute`, collect `output` messages until the
+ * `result` arrives. Outputs are filtered to the executing cell so concurrent
+ * runs on the session don't cross streams.
+ */
+export async function executeRemoteCode(
+  proxySessionId: string,
+  code: string,
+  outputCallback: (output: Record<string, unknown>) => void | Promise<void>,
+  cellId?: string | null
+): Promise<RemoteExecuteResult> {
+  const { serverId, remoteSessionId } = parseSessionId(proxySessionId);
+  if (!serverId || !remoteSessionId) {
+    throw new Error('Invalid proxied session ID');
+  }
+  const server = serverRegistry.getServer(serverId);
+  if (!server) {
+    throw new Error(`Server not found: ${serverId}`);
+  }
+
+  const wsUrl = server.url.replace(/^http/, 'ws') + `/api/kernels/${remoteSessionId}/ws`;
+
+  return new Promise<RemoteExecuteResult>((resolve, reject) => {
+    const ws = new WebSocket(wsUrl, { headers: getClusterHeaders() });
+    let settled = false;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+      try { ws.close(); } catch { /* already closing */ }
+    };
+
+    ws.on('open', () => {
+      // Subscribe BEFORE executing — the server only streams `output`
+      // messages to sockets that performed the initial sync.
+      ws.send(JSON.stringify({ type: 'sync_outputs' }));
+      ws.send(JSON.stringify({ type: 'execute', code, cell_id: cellId ?? null }));
+    });
+
+    // Messages are handled through a serial chain so an async outputCallback
+    // finishes before the result resolves (outputs must not race completion).
+    let chain: Promise<void> = Promise.resolve();
+    ws.on('message', (data) => {
+      chain = chain
+        .then(async () => {
+          if (settled) return;
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'output') {
+            if (cellId == null || msg.cell_id === cellId) {
+              await outputCallback(msg.output);
+            }
+          } else if (msg.type === 'result') {
+            settle(() => resolve(msg.result as RemoteExecuteResult));
+          } else if (msg.type === 'error') {
+            settle(() => reject(new Error(msg.error || 'Remote kernel error')));
+          }
+        })
+        .catch((err) => {
+          settle(() => reject(err instanceof Error ? err : new Error(String(err))));
+        });
+    });
+
+    ws.on('close', () => {
+      if (!settled) {
+        // Mid-run channel loss is the earliest signal the compute node died.
+        serverRegistry.reportUnreachable(serverId);
+        settle(() => reject(new Error(`Kernel connection closed before completion (server ${serverId})`)));
+      }
+    });
+
+    ws.on('error', (err) => {
+      serverRegistry.reportUnreachable(serverId);
+      settle(() => reject(err instanceof Error ? err : new Error(String(err))));
+    });
+  });
+}
+
 /**
  * Interrupt a kernel on a remote server
  */
