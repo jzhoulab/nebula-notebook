@@ -1,6 +1,6 @@
 {
   "name": "nebula-notebook",
-  "version": "0.2.17",
+  "version": "0.2.18",
   "description": "AI-native notebook computing environment — real Jupyter kernels, real filesystem, built to be driven by agents (Claude Code / Codex) via MCP",
   "type": "module",
   "license": "MIT",
