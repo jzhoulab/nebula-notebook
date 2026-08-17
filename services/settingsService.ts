@@ -183,6 +183,25 @@ export const pushRemoteAgentConfig = async (fields: RemoteAgentServerConfig): Pr
 export const remoteAgentSetupComplete = (): boolean => !!getSettings().remoteAgentUser?.trim();
 
 /**
+ * Ask the server to push this browser's session token to the user's machine
+ * (~/.nebula/token over the reverse tunnel) so a remote agent's `nebula` CLI
+ * carries a real credential instead of depending on its tunnel terminating on
+ * the server host (loopback piggyback). Best-effort and fire-and-forget: the
+ * launch proceeds either way; a failed push only means the CLI falls back to
+ * the piggyback (and gets the server's diagnostic 401 if that doesn't apply).
+ */
+export const pushRemoteAgentToken = async (): Promise<{ pushed: boolean; reason?: string }> => {
+  try {
+    const resp = await fetch('/api/terminals/agent-config/push-token', { method: 'POST' });
+    if (!resp.ok) return { pushed: false };
+    const data = await resp.json();
+    return { pushed: data.pushed === true, reason: typeof data.reason === 'string' ? data.reason : undefined };
+  } catch {
+    return { pushed: false };
+  }
+};
+
+/**
  * Ask the server to find the username on the user's machine over the reverse
  * tunnel (`whoami`) instead of demanding it in a form. Returns the login on
  * success and stores it; null means the tunnel didn't answer — which is a

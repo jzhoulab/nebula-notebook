@@ -37,10 +37,29 @@ Find the server URL, in this order:
    - a tunnel is already forwarded (they browse Nebula at \`http://localhost:3000\`
      on this machine) → step 2 will have worked;
    - no tunnel yet → ask the user to run one, e.g.
-     \`ssh -L 3000:<server-host>:3000 <cluster>\`, or to give you a directly
-     reachable URL. The right URL is whatever THEY open the Nebula UI at.
+     \`ssh -L 3000:localhost:3000 <server-host>\` (terminate the tunnel ON the
+     server's own host — see Auth below), or to give you a directly reachable
+     URL. The right URL is whatever THEY open the Nebula UI at.
 4. Health check fails everywhere → tell the user the server looks down and ask
    how they normally start/reach it (\`npx nebula-notebook\` locally).
+
+## Auth (read this when you get HTTP 401)
+
+The CLI authenticates one of two ways:
+
+- **A token** — \`NEBULA_TOKEN\` env, \`NEBULA_TOKEN_FILE\`, or \`~/.nebula/token\`
+  (Nebula pushes one there when it launches you on the user's machine). Works
+  from anywhere. Preferred.
+- **Loopback piggyback** — a token-less request is accepted only if it reaches
+  the server from the server's OWN loopback (a Nebula terminal on the server,
+  or a tunnel that terminates on the server host). A tunnel that lands on a
+  DIFFERENT host (jump node, proxy) breaks this — the server then answers 401
+  \`no_token_non_loopback\` naming the peer address it saw.
+
+On 401: read the server message (it says which case you are in). Fix = give
+the CLI a token (ask the user for one — or have them relaunch you from Nebula,
+which pushes a fresh token) or re-terminate the tunnel on the server host.
+Do NOT ask the user to "log in again in the browser" — that cannot help a CLI.
 
 Notebook paths in commands are paths on the SERVER's filesystem (ask the user
 or find them via the UI/file browser if unsure — they are usually absolute).

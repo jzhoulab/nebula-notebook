@@ -664,6 +664,52 @@ describe('launch idempotency (lab report: continue session typed the command twi
   });
 });
 
+describe('remote launch pushes an auth token to the user\'s machine first', () => {
+  // A remote agent's `nebula` CLI must not depend on WHERE its tunnel
+  // terminates (loopback piggyback): before typing a remote launch line the
+  // browser asks the server to push its session token to ~/.nebula/token on
+  // the user's machine, so the CLI carries a real credential.
+  let sent: string[];
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    sent = [];
+    fetchMock = vi.fn(async () => new Response(JSON.stringify({ pushed: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    window.localStorage.setItem('nebula-settings', JSON.stringify({
+      remoteAgentEnabled: true, remoteAgentPort: 31703, remoteAgentUser: 'jianzhou',
+      remoteAgentLocalSshPort: 2222, remoteAgentLocalUrl: 'http://localhost:3000',
+    }));
+    agentTerminalService.setAgentTerminal('t-remote');
+    agentTerminalService.registerSender('t-remote', (d) => { sent.push(d); return true; });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    agentTerminalService.unregisterSender('t-remote');
+    agentTerminalService.setAgentTerminal(null);
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it('POSTs agent-config/push-token before a remote launch', () => {
+    agentTerminalService.launchAgent('claude', { workdir: '/w/proj' });
+    const pushCalls = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/api/terminals/agent-config/push-token'));
+    expect(pushCalls.length).toBe(1);
+    expect((pushCalls[0][1] as RequestInit).method).toBe('POST');
+    // The launch line still goes out (the push is best-effort; the loopback
+    // piggyback may still cover a client with no token).
+    expect(sent.length).toBe(1);
+    expect(sent[0]).toContain('ssh -t -p 31703');
+  });
+
+  it('does not push for launches on the server itself', () => {
+    window.localStorage.setItem('nebula-settings', JSON.stringify({ remoteAgentEnabled: false }));
+    agentTerminalService.launchAgent('claude', { workdir: '/w/proj' });
+    const pushCalls = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/push-token'));
+    expect(pushCalls.length).toBe(0);
+    expect(sent.length).toBe(1);
+  });
+});
+
 describe('buildRemoteSetupAgentPrompt (hand the whole setup to an agent)', () => {
   beforeEach(() => {
     window.localStorage.clear();

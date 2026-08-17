@@ -8,7 +8,7 @@
  * answer and precisely what a bare `ssh localhost` would try.
  */
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import * as os from 'os';
 
 /** POSIX-portable login names — anything else never reaches an ssh argument. */
@@ -62,4 +62,56 @@ export async function discoverRemoteUser(port: number, hint?: string): Promise<s
     if (found) return found;
   }
   return null;
+}
+
+/** Where the pushed token lives on the user's machine ($HOME-relative). */
+export const REMOTE_TOKEN_PATH = '.nebula/token';
+
+/**
+ * Deliver an auth token to the user's machine over the reverse channel so the
+ * remote agent's `nebula` CLI authenticates with a real credential — instead
+ * of relying on the loopback piggyback, which silently dies the moment its
+ * tunnel terminates on a different host than the server (2026-08-17).
+ *
+ * The token travels on ssh's STDIN only: never in argv (visible in `ps` and
+ * shell history on a shared login node), never echoed. Written 0600 under a
+ * private dir, atomically, and acknowledged with a marker so a half-written
+ * or missing file is reported as failure, not success.
+ */
+export function pushRemoteAgentToken(port: number, user: string, token: string, timeoutMs = 12000): Promise<boolean> {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) return Promise.resolve(false);
+  if (!LOGIN_RE.test(user)) return Promise.resolve(false);
+  if (!token || /[\r\n]/.test(token) || token.length > 8192) return Promise.resolve(false);
+
+  const remoteScript =
+    `umask 077 && mkdir -p "$HOME/.nebula" && ` +
+    `t="$HOME/${REMOTE_TOKEN_PATH}" && cat > "$t.tmp" && chmod 600 "$t.tmp" && mv -f "$t.tmp" "$t" && ` +
+    `[ -s "$t" ] && printf 'NB_TOKEN_OK\\n'`;
+
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(
+        'ssh',
+        ['-p', String(port), '-o', 'ProxyCommand=none', '-o', 'StrictHostKeyChecking=accept-new',
+         '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', `${user}@localhost`, remoteScript],
+        { stdio: ['pipe', 'pipe', 'pipe'] },
+      );
+    } catch {
+      return resolve(false);
+    }
+    let out = '';
+    let done = false;
+    const finish = (ok: boolean) => { if (!done) { done = true; clearTimeout(timer); resolve(ok); } };
+    const timer = setTimeout(() => { try { child.kill(); } catch { /* gone */ } finish(false); }, timeoutMs);
+    child.stdout?.on('data', (d: Buffer) => { out += String(d); });
+    child.on('error', () => finish(false));
+    child.on('close', (code) => finish(code === 0 && out.includes('NB_TOKEN_OK')));
+    try {
+      child.stdin?.write(token);
+      child.stdin?.end();
+    } catch {
+      finish(false);
+    }
+  });
 }

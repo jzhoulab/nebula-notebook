@@ -80,6 +80,13 @@ export interface NebulaClientConfig {
   clientVersion?: string;
   /** Auto-start agent session for write operations (default: true if agentId provided) */
   autoStartAgentSession?: boolean;
+  /**
+   * Bearer token sent on every request. Without one the client relies on the
+   * server's loopback piggyback (browser session handed to token-less requests
+   * from 127.0.0.1) — which breaks whenever the tunnel terminates on a
+   * different host than the server. See resolveAuthToken() in the CLI.
+   */
+  token?: string;
 }
 
 export interface KernelSession {
@@ -245,6 +252,7 @@ export class NebulaClient {
   private clientName?: string;
   private clientVersion?: string;
   private autoStartAgentSession: boolean;
+  private token?: string;
   private activeAgentSessions: Set<string> = new Set();
   private agentSessionInFlight: Map<string, Promise<ToolResult<{ warning?: string }>>> = new Map();
   private pinnedKernelSessions: Map<string, string> = new Map();
@@ -263,6 +271,12 @@ export class NebulaClient {
     this.clientName = config.clientName;
     this.clientVersion = config.clientVersion;
     this.autoStartAgentSession = config.autoStartAgentSession ?? Boolean(config.agentId);
+    this.token = config.token?.trim() || undefined;
+  }
+
+  /** Authorization header when a token is configured; empty otherwise. */
+  private authHeaders(): Record<string, string> {
+    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
   }
 
   private recordBackend(backend?: 'ui' | 'headless'): void {
@@ -432,6 +446,7 @@ export class NebulaClient {
           signal: controller.signal,
           headers: {
             'Content-Type': 'application/json',
+            ...this.authHeaders(),
             ...options.headers,
           },
         });
@@ -814,7 +829,7 @@ export class NebulaClient {
   async downloadFile(serverPath: string): Promise<ToolResult<{ content: Buffer }>> {
     try {
       const url = `${this.baseUrl}/api/fs/download?path=${encodeURIComponent(serverPath)}`;
-      const response = await fetch(url);
+      const response = await fetch(url, { headers: this.authHeaders() });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -860,6 +875,7 @@ export class NebulaClient {
       const url = `${this.baseUrl}/api/fs/upload${conflictQ}`;
       const response = await fetch(url, {
         method: 'POST',
+        headers: this.authHeaders(),
         body: formData,
       });
 

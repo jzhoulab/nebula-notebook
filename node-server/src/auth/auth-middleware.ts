@@ -212,11 +212,34 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   // loopback); a token-less request from the network gets no free ride.
   // Browser requests carry Origin. Never let a cross-origin page inherit the
   // machine-local CLI/MCP credential merely because the TCP peer is loopback.
-  if (!token && isLoopback(request.ip) && request.headers.origin === undefined) {
+  const isBrowser = request.headers.origin !== undefined;
+  const loopback = isLoopback(request.ip);
+  if (!token && loopback && !isBrowser) {
     token = readSessionToken();
   }
 
   if (!token) {
+    // Say WHY there is no credential. A CLI/agent whose tunnel terminates on
+    // another host loses the loopback free ride and must not be told to
+    // "log in" (a browser action that cannot help it) — name the peer and
+    // the rule so the caller can self-diagnose (2026-08-17 lab incident).
+    if (!isBrowser && !loopback) {
+      return reply.code(401).send({
+        error: 'no_token_non_loopback',
+        message:
+          `No auth token, and this request did not arrive from loopback (peer ${request.ip}) — ` +
+          'the token-less CLI/MCP piggyback only works when the tunnel terminates on the server host itself. ' +
+          'Set NEBULA_TOKEN (or ~/.nebula/token) for this client, or forward to the server\'s own localhost.',
+      });
+    }
+    if (!isBrowser) {
+      return reply.code(401).send({
+        error: 'no_token_no_session',
+        message:
+          'No auth token, and no browser session is persisted yet (~/.nebula/session-token on the server) — ' +
+          'log in once from a browser, or set NEBULA_TOKEN for this client.',
+      });
+    }
     return reply.code(401).send({
       error: 'auth_required',
       message: 'Authentication required. Please log in.',
@@ -227,7 +250,9 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   if (!payload) {
     return reply.code(401).send({
       error: 'invalid_token',
-      message: 'Invalid or expired token. Please log in again.',
+      message:
+        'Invalid or expired token. Browser: log in again. CLI/agent: refresh the token — ' +
+        'unset a stale NEBULA_TOKEN / ~/.nebula/token, or relaunch the agent from Nebula (which pushes a fresh one).',
     });
   }
 

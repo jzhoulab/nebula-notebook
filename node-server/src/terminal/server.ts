@@ -12,7 +12,7 @@ import { ptyManager } from './pty-manager';
 import { agentRegistry } from './agent-registry';
 import { terminalBindings, SHARED_SHELL_NAME, TerminalBindingScope } from './binding-store';
 import { remoteAgentConfig } from './remote-agent-config';
-import { discoverRemoteUser } from './remote-agent-identity';
+import { discoverRemoteUser, pushRemoteAgentToken, REMOTE_TOKEN_PATH } from './remote-agent-identity';
 import { fsService } from '../fs/fs-service';
 import {
   CreateTerminalRequest,
@@ -86,6 +86,27 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
       });
     }
     return reply.send({ user: remoteAgentConfig.patch({ user }).user });
+  });
+
+  // Push the caller's own auth token to the user's machine (~/.nebula/token
+  // over the reverse channel) so the remote agent's CLI carries a credential
+  // instead of depending on its tunnel terminating on this host (loopback
+  // piggyback). Called by the UI right before a remote launch; the token is
+  // the browser's session — same lifetime, same trust, 0600 on their disk.
+  fastify.post('/api/terminals/agent-config/push-token', async (request: FastifyRequest, reply: FastifyReply) => {
+    const cfg = remoteAgentConfig.get();
+    if (cfg.port === undefined || !cfg.user) {
+      return reply.send({ pushed: false, reason: 'remote agent port/user not configured yet' });
+    }
+    const auth = request.headers.authorization;
+    const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (!token) {
+      return reply.send({ pushed: false, reason: 'this request carried no bearer token to push' });
+    }
+    const pushed = await pushRemoteAgentToken(cfg.port, cfg.user, token);
+    return reply.send(pushed
+      ? { pushed: true, path: `~/${REMOTE_TOKEN_PATH}` }
+      : { pushed: false, reason: 'your machine did not accept the token over the reverse tunnel (tunnel down or key not authorized)' });
   });
 
   fastify.put('/api/terminals/agent-config', async (request: FastifyRequest, reply: FastifyReply) => {

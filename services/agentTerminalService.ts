@@ -18,7 +18,7 @@
  *   failing silently.
  */
 
-import { getSettings } from './settingsService';
+import { getSettings, pushRemoteAgentToken } from './settingsService';
 import { probeTerminalBusy, registerAgent, setActiveAgentId } from './agentRegistryService';
 import { markOnboardingStep } from './onboardingService';
 
@@ -639,6 +639,11 @@ class AgentTerminalService {
       return { ok: true };
     }
     this.lastLaunchSent = { terminalId: this.state.terminalId, line: launchLine, at: now };
+    // Remote launches: hand the user's machine a credential first, so the
+    // agent's CLI authenticates regardless of where its tunnel terminates.
+    // Best-effort — the launch line is typed either way (the CLI still has
+    // the loopback piggyback when the topology allows it).
+    if (remoteLine) void pushRemoteAgentToken();
     send.sender(`${launchLine}\r`);
     markOnboardingStep('launchedAgent');
     // Project-scoped agent ledger: tell the server what launched where, and

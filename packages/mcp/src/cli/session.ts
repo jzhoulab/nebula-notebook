@@ -18,6 +18,7 @@ import {
   printHint,
   printJson,
   requirePositional,
+  resolveAuthToken,
   resolveUrl,
   saveSessionState,
 } from './shared.js';
@@ -71,6 +72,7 @@ async function sessionStart(argv: string[]): Promise<number> {
   const agentId = existing?.agentId ?? newAgentId();
 
   const client = new NebulaClient({
+    token: resolveAuthToken(),
     baseUrl: url,
     agentId,
     clientName: name ?? 'nebula-cli',
@@ -121,6 +123,7 @@ async function sessionEnd(argv: string[]): Promise<number> {
   }
 
   const client = new NebulaClient({
+    token: resolveAuthToken(),
     baseUrl: url,
     agentId: existing.agentId,
     clientName: existing.name ?? 'nebula-cli',

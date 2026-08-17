@@ -8,6 +8,7 @@
 import * as readline from 'readline';
 import { randomUUID } from 'crypto';
 import { NebulaClient } from '../notebook/client.js';
+import { resolveAuthToken } from '../cli/shared.js';
 import { getToolDefinitions, executeToolForMCP } from '../tools/index.js';
 
 interface JsonRpcRequest {
@@ -45,6 +46,7 @@ export class NebulaMCPServer {
     this.clientVersion = '0.1.0';
     this.hasConnected = false;
     this.client = new NebulaClient({
+        token: resolveAuthToken(),
       // Placeholder until connect_server is called. We never execute tools without
       // an explicit connect_server, so this is safe.
       baseUrl: this.currentUrl || 'http://127.0.0.1:0',
@@ -73,6 +75,7 @@ export class NebulaMCPServer {
     if (url !== this.currentUrl) {
       this.currentUrl = url;
       this.client = new NebulaClient({
+        token: resolveAuthToken(),
         baseUrl: url,
         agentId: this.agentId,
         clientName: this.clientName,
@@ -126,6 +129,7 @@ export class NebulaMCPServer {
               this.clientVersion = clientInfo.version || '0.0.0';
               // Recreate client with actual client name
               this.client = new NebulaClient({
+        token: resolveAuthToken(),
                 baseUrl: this.currentUrl,
                 agentId: this.agentId,
                 clientName: this.clientName,

@@ -172,10 +172,34 @@ export function newAgentId(): string {
  * url+notebook, its agent token is attached automatically so the invocation
  * shares the agent lock started by `nebula session start`.
  */
+/**
+ * Explicit credential for the CLI, in precedence order: NEBULA_TOKEN,
+ * NEBULA_TOKEN_FILE, then $NEBULA_STATE_DIR/token (default ~/.nebula/token —
+ * where Nebula pushes a token when it launches an agent on your machine).
+ * undefined = none configured; the server may still accept the request via
+ * its loopback piggyback when the tunnel terminates on the server host.
+ */
+export function resolveAuthToken(): string | undefined {
+  const fromEnv = process.env.NEBULA_TOKEN?.trim();
+  if (fromEnv) return fromEnv;
+  const candidates = [process.env.NEBULA_TOKEN_FILE, path.join(stateDir(), 'token')];
+  for (const file of candidates) {
+    if (!file) continue;
+    try {
+      const value = fs.readFileSync(file, 'utf-8').trim();
+      if (value) return value;
+    } catch {
+      /* absent — try the next source */
+    }
+  }
+  return undefined;
+}
+
 export function makeClient(url: string, notebookPath?: string): NebulaClient {
   const session = notebookPath ? loadSessionState(url, notebookPath) : null;
   return new NebulaClient({
     baseUrl: url,
+    token: resolveAuthToken(),
     agentId: session?.agentId,
     clientName: session?.name ?? 'nebula-cli',
     // Sessions are explicit in the CLI (nebula session start/end).
@@ -269,6 +293,16 @@ export function toCliError(message: string | undefined, notebookPath?: string): 
   // printer adds its own "error: ", so strip a redundant leading "Error:" to avoid
   // the doubled "error: Error: ..." prefix.
   const msg = (message || 'operation failed').replace(/^Error:\s*/i, '');
+  if (/API error 401/.test(msg)) {
+    // Surface the server's own diagnosis (it names the peer / the missing
+    // credential source) and say what a CLI caller can actually do about it.
+    return new CliError(
+      msg,
+      EXIT.ERROR,
+      'authenticate this client: set NEBULA_TOKEN (or ~/.nebula/token) to a Nebula session token — ' +
+      'relaunching the agent from Nebula pushes one; a token-less client is only accepted when its tunnel terminates on the server host'
+    );
+  }
   if (/agent session required/i.test(msg)) {
     return new CliError(msg, EXIT.ERROR, `start one with: nebula session start ${notebookPath ?? '<path>'}`);
   }
