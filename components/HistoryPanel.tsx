@@ -67,6 +67,8 @@ const OPERATION_META: Record<string, { icon: React.FC<{ className?: string }>; c
   batch: { icon: Layers, color: 'text-cyan-500', label: 'Batch' },
   runCell: { icon: Play, color: 'text-green-600', label: 'Run Cell' },
   runAllCells: { icon: Play, color: 'text-green-600', label: 'Run All' },
+  runCellsAbove: { icon: Play, color: 'text-green-600', label: 'Run Above' },
+  runCellsBelow: { icon: Play, color: 'text-green-600', label: 'Run Below' },
   runCellComplete: { icon: CheckCircle, color: 'text-green-600', label: 'Run Complete' },
   startKernel: { icon: Play, color: 'text-emerald-600', label: 'Kernel Start' },
   shutdownKernel: { icon: Power, color: 'text-amber-600', label: 'Kernel Shutdown' },
@@ -383,7 +385,9 @@ function getOperationDescription(op: TimestampedOperation): string {
     switch (event.name) {
       case 'runCell':
         return event.target?.cellIndex !== undefined ? `cell ${event.target.cellIndex + 1}` : '';
-      case 'runAllCells': {
+      case 'runAllCells':
+      case 'runCellsAbove':
+      case 'runCellsBelow': {
         const cellCount = event.data?.cellCount;
         const cellIds = event.data?.cellIds;
         const count = typeof cellCount === 'number'

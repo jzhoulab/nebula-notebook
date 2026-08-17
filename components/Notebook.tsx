@@ -10,7 +10,7 @@ import { setAutocompleteContext, isAiCompletionInFlight } from '../services/aiAu
 import ComputeAllocationModal from './ComputeAllocationModal';
 import { getSettings, saveSettings, IndentationPreference } from '../services/settingsService';
 import { markOnboardingStep } from '../services/onboardingService';
-import { Plus, Play, Save, Menu, ChevronDown, RotateCw, Power, Sparkles, Undo2, Redo2, Settings, Square, Cloud, CloudOff, Loader2, Check, AlertCircle, RefreshCw, Download, Cpu, Keyboard, X, CheckCircle, XCircle, Layers, Bot, Shield, ShieldCheck, ShieldOff, Terminal, History, MemoryStick, Server, Clock, Maximize2, Minimize2, FileText, FolderOpen, ScrollText, LockKeyhole } from 'lucide-react';
+import { Plus, Play, Save, Menu, ChevronDown, RotateCw, Power, Sparkles, Undo2, Redo2, Settings, Square, Cloud, CloudOff, Loader2, Check, AlertCircle, RefreshCw, Download, Cpu, Keyboard, X, CheckCircle, XCircle, Layers, Bot, Shield, ShieldCheck, ShieldOff, Terminal, History, MemoryStick, Server, Clock, Maximize2, Minimize2, FileText, FolderOpen, ScrollText, LockKeyhole, ArrowUpToLine, ArrowDownToLine } from 'lucide-react';
 import { CellListHandle } from './VirtualCellList';
 import { EditorView } from '@codemirror/view';
 import {
@@ -530,6 +530,7 @@ export const Notebook: React.FC = () => {
 
   // Kernel State
   const [isKernelMenuOpen, setIsKernelMenuOpen] = useState(false);
+  const [isRunMenuOpen, setIsRunMenuOpen] = useState(false);
   const [isExecutionQueueOpen, setIsExecutionQueueOpen] = useState(false);
   const [availableKernels, setAvailableKernels] = useState<KernelSpec[]>([]);
   const [pythonEnvironments, setPythonEnvironments] = useState<PythonEnvironment[]>([]);
@@ -3708,6 +3709,36 @@ export const Notebook: React.FC = () => {
     cellsRef.current.forEach(c => queueExecution(c.id));
   }, [isSealedReadOnly, cellStats.codeCount, logOperation, queueExecution]);
 
+  // Jupyter-style directional runs relative to the active cell:
+  // "above" is exclusive, "and below" includes the active cell.
+  const handleRunCellsAbove = useCallback(() => {
+    if (isSealedReadOnly) return;
+    const currentCells = cellsRef.current;
+    const activeIndex = currentCells.findIndex(c => c.id === activeCellIdRef.current);
+    if (activeIndex <= 0) return;
+    logOperation({
+      type: 'event',
+      category: 'execution',
+      name: 'runCellsAbove',
+      data: { cellCount: activeIndex },
+    });
+    currentCells.slice(0, activeIndex).forEach(c => queueExecution(c.id));
+  }, [isSealedReadOnly, logOperation, queueExecution]);
+
+  const handleRunCellsBelow = useCallback(() => {
+    if (isSealedReadOnly) return;
+    const currentCells = cellsRef.current;
+    const activeIndex = currentCells.findIndex(c => c.id === activeCellIdRef.current);
+    if (activeIndex === -1) return;
+    logOperation({
+      type: 'event',
+      category: 'execution',
+      name: 'runCellsBelow',
+      data: { cellCount: currentCells.length - activeIndex },
+    });
+    currentCells.slice(activeIndex).forEach(c => queueExecution(c.id));
+  }, [isSealedReadOnly, logOperation, queueExecution]);
+
   // Navigate to a specific cell (used by search)
   const navigateToCell = useCallback((_cellIndex: number, cellId: string) => {
     setActiveCellId(cellId);
@@ -4308,9 +4339,13 @@ export const Notebook: React.FC = () => {
   // Notebook (query state lives inside CommandPalette).
   const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
   const modKeyLabel = isMacPlatform ? '⌘' : 'Ctrl+';
+  // Directional runs need an anchor cell; index -1 = nothing selected.
+  const activeCellIndex = activeCellId ? cells.findIndex(c => c.id === activeCellId) : -1;
   const paletteCommands: PaletteCommand[] = [
     // Run
     { id: 'run-all', title: 'Run all cells', section: 'Run', keywords: 'execute everything', disabled: isSealedReadOnly, run: handleRunAllCells },
+    { id: 'run-above', title: 'Run cells above', section: 'Run', keywords: 'execute before upper until here', disabled: isSealedReadOnly || activeCellIndex <= 0, run: handleRunCellsAbove },
+    { id: 'run-below', title: 'Run cell and below', section: 'Run', keywords: 'execute after rest from here', disabled: isSealedReadOnly || activeCellIndex === -1, run: handleRunCellsBelow },
     { id: 'interrupt-kernel', title: 'Interrupt kernel', section: 'Kernel', keywords: 'stop cancel execution', disabled: isSealedReadOnly || !kernelSessionId, run: () => { interruptKernel(); } },
     { id: 'restart-kernel', title: 'Restart kernel', section: 'Kernel', keywords: 'reset', disabled: isSealedReadOnly || !kernelSessionId, run: () => { restartKernel(); } },
     { id: 'change-kernel', title: 'Change kernel…', section: 'Kernel', keywords: 'switch select python julia r server', disabled: isSealedReadOnly, run: () => setIsKernelMenuOpen(true) },
@@ -5177,16 +5212,58 @@ export const Notebook: React.FC = () => {
                       <Save className="w-4 h-4" />
                       <span className="hidden lg:inline">Save</span>
                   </button>
-                  <button
-                    onClick={handleRunAllCells}
-                    disabled={isSealedReadOnly}
-                    aria-label="Run all cells"
-                    title={isSealedReadOnly ? 'Sealed evidence cannot be re-executed' : 'Run all cells'}
-                    className="btn-primary flex items-center gap-2 bg-slate-900 text-white px-2 sm:px-3 py-1.5 rounded-md hover:bg-slate-700 text-xs font-medium transition-colors shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed disabled:shadow-none"
-                  >
-                      <Play className="w-4 h-4" />
-                      <span className="hidden md:inline">Run All</span>
-                  </button>
+                  <div className="relative flex items-stretch">
+                    <button
+                      onClick={handleRunAllCells}
+                      disabled={isSealedReadOnly}
+                      aria-label="Run all cells"
+                      title={isSealedReadOnly ? 'Sealed evidence cannot be re-executed' : 'Run all cells'}
+                      className="btn-primary flex items-center gap-2 bg-slate-900 text-white px-2 sm:px-3 py-1.5 rounded-l-md hover:bg-slate-700 text-xs font-medium transition-colors shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed disabled:shadow-none"
+                    >
+                        <Play className="w-4 h-4" />
+                        <span className="hidden md:inline">Run All</span>
+                    </button>
+                    <button
+                      onClick={() => setIsRunMenuOpen(o => !o)}
+                      disabled={isSealedReadOnly}
+                      aria-label="Run options"
+                      aria-haspopup="menu"
+                      aria-expanded={isRunMenuOpen}
+                      title={isSealedReadOnly ? 'Sealed evidence cannot be re-executed' : 'More run options'}
+                      className="btn-primary flex items-center bg-slate-900 text-white px-1 py-1.5 rounded-r-md border-l border-slate-600 hover:bg-slate-700 transition-colors shadow-sm disabled:bg-slate-300 disabled:cursor-not-allowed disabled:shadow-none"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                    {isRunMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsRunMenuOpen(false)} />
+                        <div role="menu" aria-label="Run options" className="absolute right-0 top-full mt-1 z-50 w-52 bg-white border border-slate-200 rounded-md shadow-lg py-1">
+                          <button
+                            role="menuitem"
+                            disabled={activeCellIndex <= 0}
+                            onClick={() => { setIsRunMenuOpen(false); handleRunCellsAbove(); }}
+                            title={activeCellIndex === -1 ? 'Select a cell first' : activeCellIndex === 0 ? 'No cells above the selected cell' : undefined}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          >
+                            <ArrowUpToLine className="w-3.5 h-3.5" />
+                            <span>Run cells above</span>
+                            {activeCellIndex > 0 && <span className="ml-auto text-slate-400">{activeCellIndex}</span>}
+                          </button>
+                          <button
+                            role="menuitem"
+                            disabled={activeCellIndex === -1}
+                            onClick={() => { setIsRunMenuOpen(false); handleRunCellsBelow(); }}
+                            title={activeCellIndex === -1 ? 'Select a cell first' : undefined}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100 disabled:text-slate-300 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                          >
+                            <ArrowDownToLine className="w-3.5 h-3.5" />
+                            <span>Run cell and below</span>
+                            {activeCellIndex !== -1 && <span className="ml-auto text-slate-400">{cells.length - activeCellIndex}</span>}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
                   <button
                     onClick={() => {

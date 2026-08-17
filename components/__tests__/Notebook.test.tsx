@@ -1143,4 +1143,83 @@ describe('Notebook', () => {
       });
     });
   });
+
+  describe('run above / run below', () => {
+    const threeCells = () => {
+      const cells = [
+        { id: 'cell-1', type: 'code' as const, content: 'print("a1")', outputs: [], isExecuting: false },
+        { id: 'cell-2', type: 'code' as const, content: 'print("a2")', outputs: [], isExecuting: false },
+        { id: 'cell-3', type: 'code' as const, content: 'print("a3")', outputs: [], isExecuting: false },
+      ];
+      const data = {
+        path: '/test/notebook.ipynb',
+        cells,
+        kernelspec: 'python3',
+        mtime: Date.now() / 1000,
+      };
+      vi.mocked(fileService.getNotebookData).mockResolvedValue(
+        data as Awaited<ReturnType<typeof fileService.getNotebookData>>);
+      vi.mocked(fileService.getFileContentWithMtime).mockResolvedValue(
+        data as Awaited<ReturnType<typeof fileService.getFileContentWithMtime>>);
+    };
+
+    /** Contents executeCode received, in order — the ground truth of what ran. */
+    const executedContents = () =>
+      vi.mocked(kernelService.executeCode).mock.calls.map((call) => call[1]);
+
+    const openRunMenu = () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Run options' }));
+    };
+
+    it('runs only the cells above the active cell (exclusive)', async () => {
+      threeCells();
+      renderNotebook();
+      await screen.findByTestId('cell-cell-3');
+
+      fireEvent.click(screen.getByTestId('cell-cell-3'));
+      vi.mocked(kernelService.executeCode).mockClear();
+
+      openRunMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /Run cells above/ }));
+
+      await waitFor(() => {
+        expect(executedContents()).toEqual(['print("a1")', 'print("a2")']);
+      });
+    });
+
+    it('runs the active cell and all below (inclusive)', async () => {
+      threeCells();
+      renderNotebook();
+      await screen.findByTestId('cell-cell-2');
+
+      fireEvent.click(screen.getByTestId('cell-cell-2'));
+      vi.mocked(kernelService.executeCode).mockClear();
+
+      openRunMenu();
+      fireEvent.click(screen.getByRole('menuitem', { name: /Run cell and below/ }));
+
+      await waitFor(() => {
+        expect(executedContents()).toEqual(['print("a2")', 'print("a3")']);
+      });
+    });
+
+    it('disables "run above" on the first cell, enables it further down', async () => {
+      threeCells();
+      renderNotebook();
+      await screen.findByTestId('cell-cell-1');
+
+      // First cell active (the load default): nothing above it, but
+      // itself-and-below works.
+      fireEvent.click(screen.getByTestId('cell-cell-1'));
+      openRunMenu();
+      expect(screen.getByRole('menuitem', { name: /Run cells above/ })).toBeDisabled();
+      expect(screen.getByRole('menuitem', { name: /Run cell and below/ })).toBeEnabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Run options' })); // close
+
+      fireEvent.click(screen.getByTestId('cell-cell-2'));
+      openRunMenu();
+      expect(screen.getByRole('menuitem', { name: /Run cells above/ })).toBeEnabled();
+      expect(screen.getByRole('menuitem', { name: /Run cell and below/ })).toBeEnabled();
+    });
+  });
 });
