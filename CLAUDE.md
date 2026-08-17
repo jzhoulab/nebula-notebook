@@ -234,7 +234,9 @@ The notebook supports Jupyter-style keyboard shortcuts with two modes:
 | `Ctrl/Cmd+S` | Save notebook |
 | `Ctrl/Cmd+F` | Open search |
 | `Ctrl/Cmd+C` | Interrupt kernel (when busy) |
-| `Ctrl+\`` | Toggle integrated terminal |
+| `Ctrl+\`` | Toggle integrated terminal panel (any tab) |
+| `Ctrl/Cmd+Shift+H` | Toggle history panel |
+| `Ctrl/Cmd+Shift+P` | Command palette (also: show/hide terminal & history, open shell/agent tab) |
 
 ## Key Features
 

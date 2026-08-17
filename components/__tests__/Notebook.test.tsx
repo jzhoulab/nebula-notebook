@@ -1144,6 +1144,72 @@ describe('Notebook', () => {
     });
   });
 
+  describe('panel toggles: terminal and history', () => {
+    // Both panels are togglable ON and OFF from the keyboard and from a single
+    // palette command — no state (e.g. "terminal panel open on the agent tab")
+    // where the only way to close it is the mouse.
+    const isPaletteOpen = () => screen.queryByLabelText('Command palette') !== null;
+    const openPalette = () => fireEvent.keyDown(document.body, { code: 'KeyP', key: 'P', ctrlKey: true, shiftKey: true });
+    const paletteButton = (re: RegExp) => screen.getByRole('button', { name: re });
+
+    it('Cmd/Ctrl+Shift+H toggles the history panel', async () => {
+      renderNotebook();
+      await screen.findByTestId('cell-cell-1');
+      expect(screen.queryByTestId('history-panel')).toBeNull();
+
+      fireEvent.keyDown(document.body, { key: 'h', ctrlKey: true, shiftKey: true });
+      await waitFor(() => expect(screen.getByTestId('history-panel')).toBeInTheDocument());
+
+      fireEvent.keyDown(document.body, { key: 'H', metaKey: true, shiftKey: true });
+      await waitFor(() => expect(screen.queryByTestId('history-panel')).toBeNull());
+    });
+
+    const openAgentTab = async () => {
+      openPalette();
+      await waitFor(() => expect(isPaletteOpen()).toBe(true));
+      fireEvent.click(paletteButton(/Open agent terminal/));
+      await waitFor(() => expect(screen.getByTestId('terminal-panel')).not.toHaveClass('hidden'));
+    };
+
+    it('Ctrl+` toggles the terminal panel off even when it is on the agent tab', async () => {
+      renderNotebook();
+      await screen.findByTestId('cell-cell-1');
+      await openAgentTab();
+
+      fireEvent.keyDown(document.body, { key: '`', ctrlKey: true });
+      await waitFor(() => expect(screen.getByTestId('terminal-panel')).toHaveClass('hidden'));
+    });
+
+    it('the palette "terminal panel" command is a true on/off toggle regardless of tab', async () => {
+      renderNotebook();
+      await screen.findByTestId('cell-cell-1');
+      await openAgentTab();
+
+      openPalette();
+      await waitFor(() => expect(isPaletteOpen()).toBe(true));
+      fireEvent.click(paletteButton(/Hide terminal panel/));
+      await waitFor(() => expect(screen.getByTestId('terminal-panel')).toHaveClass('hidden'));
+
+      openPalette();
+      await waitFor(() => expect(isPaletteOpen()).toBe(true));
+      fireEvent.click(paletteButton(/Show terminal panel/));
+      await waitFor(() => expect(screen.getByTestId('terminal-panel')).not.toHaveClass('hidden'));
+    });
+
+    it('palette lists the history and terminal toggles with their shortcuts', async () => {
+      renderNotebook();
+      await screen.findByTestId('cell-cell-1');
+      openPalette();
+      await waitFor(() => expect(isPaletteOpen()).toBe(true));
+      // Titles flip Show/Hide with panel state (which may persist from a
+      // previous test via storage) — the invariant is the shortcut labels.
+      expect(paletteButton(/(Show|Hide) history panel/)).toHaveTextContent(/⇧H|Shift\+H/);
+      expect(paletteButton(/(Show|Hide) terminal panel/)).toHaveTextContent(/`/);
+      expect(paletteButton(/Open shell terminal/)).toBeInTheDocument();
+      expect(paletteButton(/Open agent terminal/)).toBeInTheDocument();
+    });
+  });
+
   describe('run above / run below', () => {
     const threeCells = () => {
       const cells = [

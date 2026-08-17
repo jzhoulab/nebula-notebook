@@ -2298,7 +2298,7 @@ export const Notebook: React.FC = () => {
     interruptKernelRef, scrollToCellFnRef,
     selectCellRange, clearCellSelection, deleteSelectedCells, copySelectedCells,
     setActiveCellId, setPendingFocus, setSearchSeed, setIsSearchOpen,
-    setIsTerminalOpen, setCellClipboard, setCellQueue,
+    setIsTerminalOpen, setIsHistoryOpen, setCellClipboard, setCellQueue,
   });
 
   const refreshFileList = async () => {
@@ -4363,12 +4363,12 @@ export const Notebook: React.FC = () => {
     { id: 'go-to-cell', title: 'Go to cell…', section: 'Edit', keywords: 'jump navigate search cells spotlight', shortcut: `${isMacPlatform ? '⌘' : 'Ctrl+'}P`, run: () => openNavigator('') },
     // View
     { id: 'toggle-full-width', title: isFullWidth ? 'Exit full width mode' : 'Enter full width mode', section: 'View', keywords: 'wide layout width', disabled: isSealedReadOnly, run: () => { handleToggleFullWidth(); } },
-    { id: 'toggle-history', title: isHistoryOpen ? 'Hide history panel' : 'Show history panel', section: 'View', keywords: 'time travel edits undo timeline', run: () => setIsHistoryOpen(open => !open) },
-    { id: 'toggle-terminal', title: isTerminalOpen && terminalTab === 'shell' ? 'Hide terminal' : 'Show terminal', section: 'View', keywords: 'shell console', disabled: isSealedReadOnly, run: () => {
-      if (!isTerminalOpen) { setIsTerminalOpen(true); setTerminalTab('shell'); }
-      else if (terminalTab === 'shell') setIsTerminalOpen(false);
-      else setTerminalTab('shell');
-    } },
+    { id: 'toggle-history', title: isHistoryOpen ? 'Hide history panel' : 'Show history panel', section: 'View', keywords: 'time travel edits undo timeline toggle', shortcut: `${modKeyLabel}⇧H`, run: () => setIsHistoryOpen(open => !open) },
+    // A true on/off toggle for the whole panel (whatever tab it is on) — plus
+    // explicit "open to this tab" commands. Before, "Show terminal" from the
+    // agent tab switched tabs instead of closing, so there was no one-step off.
+    { id: 'toggle-terminal', title: isTerminalOpen ? 'Hide terminal panel' : 'Show terminal panel', section: 'View', keywords: 'shell console agent toggle', shortcut: 'Ctrl+`', disabled: isSealedReadOnly, run: () => setIsTerminalOpen(open => !open) },
+    { id: 'open-shell', title: 'Open shell terminal', section: 'View', keywords: 'shell console bash zsh', disabled: isSealedReadOnly, run: () => { setIsTerminalOpen(true); setTerminalTab('shell'); } },
     { id: 'open-agent', title: 'Open agent terminal', section: 'View', keywords: 'claude code codex ai assistant', disabled: isSealedReadOnly, run: () => { setIsTerminalOpen(true); setTerminalTab('agent'); } },
     { id: 'open-settings', title: 'Open settings…', section: 'View', keywords: 'preferences options', run: () => setIsSettingsOpen(true) },
     { id: 'keyboard-shortcuts', title: 'Keyboard shortcuts', section: 'Help', keywords: 'keys bindings hotkeys help', run: () => setIsKeyboardHelpOpen(true) },
@@ -5845,6 +5845,8 @@ export const Notebook: React.FC = () => {
                   <div className="flex justify-between"><span className="text-slate-600">Search</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Cmd/Ctrl + F</kbd></div>
                   <div className="flex justify-between"><span className="text-slate-600">Go to cell / spotlight search</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Cmd/Ctrl + P</kbd></div>
                   <div className="flex justify-between"><span className="text-slate-600">Command Palette (run commands)</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Cmd/Ctrl + Shift + P</kbd></div>
+                  <div className="flex justify-between"><span className="text-slate-600">Toggle terminal panel</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Ctrl + `</kbd></div>
+                  <div className="flex justify-between"><span className="text-slate-600">Toggle history panel</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Cmd/Ctrl + Shift + H</kbd></div>
                 </div>
               </div>
             </div>

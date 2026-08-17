@@ -64,6 +64,7 @@ export interface NotebookShortcutDeps {
   setSearchSeed: (v: string) => void;
   setIsSearchOpen: (v: boolean) => void;
   setIsTerminalOpen: (updater: (prev: boolean) => boolean) => void;
+  setIsHistoryOpen: (updater: (prev: boolean) => boolean) => void;
   setCellClipboard: (items: ShortcutClipboardItem[]) => void;
   setCellQueue: (updater: (prev: ShortcutClipboardItem[]) => ShortcutClipboardItem[]) => void;
 }
@@ -149,6 +150,14 @@ export function useNotebookKeyboardShortcuts(deps: NotebookShortcutDeps): void {
         e.preventDefault();
         if (d.readOnly) return;
         d.setIsTerminalOpen(prev => !prev);
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+H: Toggle the history panel (works everywhere; the
+      // panel is read-only viewing, so it stays available on sealed notebooks).
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && key.toLowerCase() === 'h') {
+        e.preventDefault();
+        d.setIsHistoryOpen(prev => !prev);
         return;
       }
 
