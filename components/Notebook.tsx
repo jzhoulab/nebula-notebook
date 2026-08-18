@@ -5824,9 +5824,12 @@ export const Notebook: React.FC = () => {
                   <div className="flex justify-between"><span className="text-slate-600">Delete cell</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Delete / Backspace</kbd></div>
                   <div className="flex justify-between"><span className="text-slate-600">Move cell up / down</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Cmd/Ctrl + Shift + ↑/↓</kbd></div>
                   <div className="flex justify-between"><span className="text-slate-600">Cut / Copy / Paste cell</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">X / C / V</kbd></div>
+                  <div className="flex justify-between"><span className="text-slate-600">Paste cell above</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Shift + V</kbd></div>
+                  <div className="flex justify-between"><span className="text-slate-600">Undo / Redo cell operations (notebook-level)</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">Z / Shift + Z</kbd></div>
                   <div className="flex justify-between"><span className="text-slate-600">Enqueue / Dequeue cell (FIFO)</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">E / D</kbd></div>
                   <div className="text-[0.6875rem] text-slate-400 mt-1">Jupyter classic keys (enable in Settings): dd delete · z undo · Shift+Z redo · 00 restart kernel · ii interrupt</div>
                   <div className="flex justify-between"><span className="text-slate-600">Convert to Markdown / Code</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">M / Y</kbd></div>
+                  <div className="flex justify-between"><span className="text-slate-600">Jupyter classic (opt-in in Settings): delete / restart kernel / interrupt</span><kbd className="px-2 py-0.5 bg-slate-100 rounded text-xs">D D / 0 0 / I I</kbd></div>
                 </div>
               </div>
               <div>
