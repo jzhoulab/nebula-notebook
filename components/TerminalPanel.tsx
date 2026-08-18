@@ -87,6 +87,34 @@ const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 800;
 const DEFAULT_HEIGHT = 300;
 
+// Panel height is remembered PER NOTEBOOK, PER BROWSER (localStorage keyed by
+// the notebook's canonical path). Per browser on purpose — the right height
+// depends on the screen — and never written into the .ipynb, so a resize
+// never dirties the file (unlike full_width, which lives in metadata).
+const HEIGHT_STORAGE_PREFIX = 'nebula-terminal-height:';
+
+export function loadTerminalHeight(notebookPath: string | null | undefined): number | null {
+  if (!notebookPath) return null;
+  try {
+    const raw = window.localStorage.getItem(HEIGHT_STORAGE_PREFIX + notebookPath);
+    if (raw === null) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < MIN_HEIGHT || n > MAX_HEIGHT) return null;
+    return Math.round(n);
+  } catch {
+    return null;
+  }
+}
+
+export function saveTerminalHeight(notebookPath: string | null | undefined, height: number): void {
+  if (!notebookPath) return;
+  try {
+    window.localStorage.setItem(HEIGHT_STORAGE_PREFIX + notebookPath, String(Math.round(height)));
+  } catch {
+    /* storage unavailable/full — the in-memory height still applies */
+  }
+}
+
 export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   isOpen,
   onClose,
@@ -95,7 +123,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   activeTab,
   onTabChange,
 }) => {
-  const [height, setHeight] = useState(defaultHeight);
+  const [height, setHeight] = useState(() => loadTerminalHeight(notebookPath) ?? defaultHeight);
+  // Switching notebooks (the panel persists across tabs) adopts that
+  // notebook's remembered height; a notebook never resized gets the default.
+  useEffect(() => {
+    setHeight(loadTerminalHeight(notebookPath) ?? defaultHeight);
+  }, [notebookPath, defaultHeight]);
   // Two independent ptys per notebook: a plain shell, and the agent's terminal.
   // Keeping them separate preserves normal terminal use while an agent runs.
   const [shellTerm, setShellTerm] = useState<TerminalInfo | null>(null);
@@ -602,10 +635,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
     const startY = e.clientY;
     const startHeight = height;
+    let latestHeight = startHeight;
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = startY - moveEvent.clientY;
       const newHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, startHeight + deltaY));
+      latestHeight = newHeight;
       setHeight(newHeight);
       scheduleTerminalResize();
     };
@@ -616,6 +651,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
       document.removeEventListener('mouseup', handleMouseUp);
       resizeCleanupRef.current = null;
       scheduleTerminalResize();
+      // Remember the final height for this notebook (drag-end only — not
+      // every mousemove).
+      if (latestHeight !== startHeight) saveTerminalHeight(notebookPath, latestHeight);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
@@ -625,7 +663,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [height, triggerTerminalResize]);
+  }, [height, notebookPath, triggerTerminalResize]);
 
   // Cleanup resize listeners on unmount
   useEffect(() => {

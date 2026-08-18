@@ -169,3 +169,68 @@ describe('TerminalPanel', () => {
     });
   });
 });
+
+describe('TerminalPanel remembers its height per notebook', () => {
+  // Panel height is screen-dependent UI chrome: remembered per notebook, per
+  // browser (localStorage keyed by the notebook's canonical path) — never
+  // written into the .ipynb, so resizing never dirties the file.
+  const drag = (from: number, to: number) => {
+    fireEvent.mouseDown(screen.getByTestId('terminal-resize-handle'), { clientY: from });
+    fireEvent.mouseMove(document, { clientY: to });
+    fireEvent.mouseUp(document, { clientY: to });
+  };
+  const panelHeight = () => parseInt(screen.getByTestId('terminal-panel').style.height, 10);
+  const mount = (path: string) => render(
+    <NotificationProvider>
+      <TerminalPanel isOpen={true} onClose={() => {}} notebookPath={path} />
+    </NotificationProvider>
+  );
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(0); return 1; });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.clear();
+  });
+
+  it('restores the height a notebook was last resized to', () => {
+    const first = mount('/w/a.ipynb');
+    expect(panelHeight()).toBe(300); // default
+    drag(500, 380); // dragging the handle UP by 120px grows the panel
+    expect(panelHeight()).toBe(420);
+    first.unmount();
+
+    mount('/w/a.ipynb');
+    expect(panelHeight()).toBe(420);
+  });
+
+  it('keeps notebooks independent, and switches height when the notebook changes', () => {
+    const a = mount('/w/a.ipynb');
+    drag(500, 300);
+    expect(panelHeight()).toBe(500);
+    a.unmount();
+
+    const view = mount('/w/b.ipynb');
+    expect(panelHeight()).toBe(300); // b never resized → default
+
+    view.rerender(
+      <NotificationProvider>
+        <TerminalPanel isOpen={true} onClose={() => {}} notebookPath="/w/a.ipynb" />
+      </NotificationProvider>
+    );
+    expect(panelHeight()).toBe(500);
+  });
+
+  it('ignores garbage or out-of-range stored values', () => {
+    window.localStorage.setItem('nebula-terminal-height:/w/c.ipynb', 'not-a-number');
+    const c = mount('/w/c.ipynb');
+    expect(panelHeight()).toBe(300);
+    c.unmount();
+
+    window.localStorage.setItem('nebula-terminal-height:/w/d.ipynb', '99999');
+    mount('/w/d.ipynb');
+    expect(panelHeight()).toBe(300);
+  });
+});
