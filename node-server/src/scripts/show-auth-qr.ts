@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { authenticator } from 'otplib';
-import * as qrcode from 'qrcode-terminal';
+import { buildSetupInstructions, renderQr, type QrMode } from '../auth/setup-qr';
 
 interface AuthConfigFile {
   totpSecret?: string;
@@ -33,26 +33,36 @@ function readAuthConfig(): AuthConfigFile {
 }
 
 function main(): void {
+  const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`show-auth-qr — reprint the 2FA setup QR for this machine's Nebula
+
+  npm run auth:qr              # compact QR (Unicode half-blocks)
+  npm run auth:qr -- --big     # font-independent QR (ANSI color blocks) —
+                               # use when the compact one renders as dashes
+  npm run auth:qr -- --url     # print only the otpauth:// URL (no QR)`);
+    return;
+  }
+
   const config = readAuthConfig();
   const secret = typeof config.totpSecret === 'string' ? config.totpSecret.trim() : '';
 
   if (!secret) {
-    fail(`[Auth] Missing \"totpSecret\" in ${AUTH_CONFIG_FILE}`);
+    fail(`[Auth] Missing "totpSecret" in ${AUTH_CONFIG_FILE}`);
   }
 
   const otpAuthUrl = authenticator.keyuri(ACCOUNT_NAME, ISSUER, secret);
 
-  console.log('\n' + '='.repeat(60));
-  console.log('  NEBULA NOTEBOOK - 2FA QR');
-  console.log('='.repeat(60));
-  console.log('\nScan this QR code with your authenticator app:\n');
+  if (args.includes('--url')) {
+    console.log(otpAuthUrl);
+    return;
+  }
 
-  qrcode.generate(otpAuthUrl, { small: true });
-
-  console.log('\nOr enter this key manually: ' + secret);
-  console.log(`\nConfig: ${AUTH_CONFIG_FILE}`);
-  console.log(`[Auth] setupComplete=${config.setupComplete === true ? 'true' : 'false'}`);
-  console.log('='.repeat(60) + '\n');
+  const mode: QrMode = args.includes('--big') ? 'big' : 'small';
+  console.log(buildSetupInstructions(secret, otpAuthUrl, renderQr(otpAuthUrl, mode)));
+  if (mode === 'small') {
+    console.log('Garbled? Re-run with --big for a font-independent QR.');
+  }
 }
 
 main();

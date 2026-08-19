@@ -12,7 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { authenticator } from 'otplib';
 import * as jwt from 'jsonwebtoken';
-import * as qrcode from 'qrcode-terminal';
+import { buildSetupInstructions, renderQr } from './setup-qr';
 
 // Config file location (env override is a test seam)
 const NEBULA_DIR = process.env.NEBULA_AUTH_DIR || path.join(os.homedir(), '.nebula');
@@ -183,18 +183,7 @@ class AuthService {
     const issuer = 'NebulaNotebook';
     const accountName = 'local';
     const otpAuthUrl = authenticator.keyuri(accountName, issuer, this.config.totpSecret);
-
-    console.log('\n' + '='.repeat(60));
-    console.log('  NEBULA NOTEBOOK - 2FA SETUP');
-    console.log('='.repeat(60));
-    console.log('\nScan this QR code with your authenticator app:\n');
-
-    // Print QR code to terminal
-    qrcode.generate(otpAuthUrl, { small: true });
-
-    console.log('\nOr enter this key manually: ' + this.config.totpSecret);
-    console.log('\nThen open the Nebula UI and enter the 6-digit code.');
-    console.log('='.repeat(60) + '\n');
+    console.log(buildSetupInstructions(this.config.totpSecret, otpAuthUrl, renderQr(otpAuthUrl, 'small')));
   }
 
   /**
