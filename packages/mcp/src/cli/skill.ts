@@ -89,6 +89,8 @@ nebula nb clear-outputs <path> [--cells id,id]
 nebula nb meta <path> <cell-id> --set type=markdown
 nebula kernel ls                         # available kernels on the server
 nebula kernel status|start|stop|restart|interrupt <path>
+nebula context                           # the notebook the user is viewing NOW (needs
+                                         # NEBULA_AGENT_TERMINAL, set by Nebula launches)
 nebula session start <path>              # hold the agent edit lock (persists across invocations)
 nebula session end <path>
 nebula compute status|queues|alloc|ls|use|cancel   # cluster compute (see below)

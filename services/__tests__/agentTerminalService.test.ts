@@ -246,7 +246,7 @@ describe('agentTerminalService prompt injection', () => {
     // Local launches run the agent from its workspace dir (legacy shared dir
     // when no workdir is known), then a fresh Claude launch pins this
     // notebook's own session id, then the prompt.
-    expect(cmd).toMatch(/^mkdir -p "\$HOME\/\.nebula\/agent" && cd "\$HOME\/\.nebula\/agent" && claude --session-id [0-9a-f-]{36} /);
+    expect(cmd).toMatch(/^mkdir -p "\$HOME\/\.nebula\/agent" && cd "\$HOME\/\.nebula\/agent" && (?:NEBULA_AGENT_TERMINAL=\S+ )?claude --session-id [0-9a-f-]{36} /);
     expect(cmd.endsWith('\r')).toBe(true);
     expect(cmd).toContain('connect_server');
     expect(cmd).toContain('http://localhost:8000');
@@ -473,7 +473,7 @@ describe('remote-agent mode (agent on the user machine)', () => {
     // Keepalives make a hung transport self-terminate (~60s) instead of
     // freezing the pty forever — the liveness machinery then sees a clean
     // exit-to-shell it can act on.
-    expect(line).toContain('NEBULA_URL=http://localhost:3000 claude ');
+    expect(line).toMatch(/NEBULA_URL=http:\/\/localhost:3000 (?:NEBULA_AGENT_TERMINAL=\S+ )?claude /);
     expect(line).toContain('exec "$SHELL" -l -i -c ');
     // no tmux/daemons: resume rides `claude --continue` instead
     expect(line).not.toContain('tmux');
@@ -550,7 +550,7 @@ describe('remote-agent mode (agent on the user machine)', () => {
     agentTerminalService.registerSender('t9', (d) => { sent.push(d); return true; });
     agentTerminalService.launchAgent('codex');
     expect(sent[0]).toMatch(/^"\$SHELL" -l -i -c '/);
-    expect(sent[0]).toMatch(/mkdir -p "\$HOME\/\.nebula\/agent" && cd "\$HOME\/\.nebula\/agent" && codex /);
+    expect(sent[0]).toMatch(/mkdir -p "\$HOME\/\.nebula\/agent" && cd "\$HOME\/\.nebula\/agent" && (?:NEBULA_AGENT_TERMINAL=\S+ )?codex /);
     expect(sent[0]).not.toContain('ssh');
   });
 });
@@ -707,6 +707,49 @@ describe('remote launch pushes an auth token to the user\'s machine first', () =
     const pushCalls = fetchMock.mock.calls.filter((c) => String(c[0]).endsWith('/push-token'));
     expect(pushCalls.length).toBe(0);
     expect(sent.length).toBe(1);
+  });
+});
+
+describe('driving-context reporting (which notebook is the user viewing)', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    agentTerminalService.setAgentTerminal('agent-t1');
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    agentTerminalService.setNotebookContext(null);
+    agentTerminalService.setAgentTerminal(null);
+    window.sessionStorage.clear();
+  });
+
+  const drivingCalls = () =>
+    fetchMock.mock.calls
+      .filter((c) => String(c[0]).endsWith('/api/terminals/driving'))
+      .map((c) => JSON.parse((c[1] as RequestInit).body as string));
+
+  it('reports on notebook switch, keyed by the agent terminal', () => {
+    agentTerminalService.setNotebookContext('/w/nb1.ipynb');
+    agentTerminalService.setNotebookContext('/w/nb2.ipynb');
+    expect(drivingCalls()).toEqual([
+      { terminal: 'agent-t1', notebook: '/w/nb1.ipynb' },
+      { terminal: 'agent-t1', notebook: '/w/nb2.ipynb' },
+    ]);
+  });
+
+  it('reportDrivingNow (tab focus) re-reports the current notebook, and stays silent without one', () => {
+    agentTerminalService.reportDrivingNow(); // no notebook yet
+    expect(drivingCalls()).toEqual([]);
+    agentTerminalService.setNotebookContext('/w/nb1.ipynb');
+    fetchMock.mockClear();
+    agentTerminalService.reportDrivingNow(); // focus ping
+    expect(drivingCalls()).toEqual([{ terminal: 'agent-t1', notebook: '/w/nb1.ipynb' }]);
+  });
+
+  it('launch lines carry NEBULA_AGENT_TERMINAL for `nebula context`', () => {
+    const line = agentTerminalService.buildLocalLaunchCommand('claude', false, 'sess-1', false, '/w/proj');
+    expect(line).toContain('NEBULA_AGENT_TERMINAL=agent-t1');
   });
 });
 

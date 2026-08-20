@@ -17,6 +17,7 @@ import { cmdSession } from './session.js';
 import { cmdCompute } from './compute.js';
 import { cmdFs } from './fs.js';
 import { cmdSetupSkill } from './skill.js';
+import { cmdContext } from './context.js';
 
 const ROOT_HELP = `nebula — work with notebooks on a running Nebula server
 
@@ -34,6 +35,7 @@ usage: nebula <command> …
   kernel ls                      available kernels on the server
   kernel status|start|stop|restart|interrupt <path>
   session start|end <path>       hold/release the agent lock across invocations
+  context                        the notebook the user is viewing NOW (never guess "this notebook")
   compute status|queues|alloc|ls|use|cancel
                                  cluster compute allocations (HPC; optional)
   fs ls|cat|write|rm|mv|download|upload
@@ -64,6 +66,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdCompute(rest);
     case 'fs':
       return cmdFs(rest);
+    case 'context':
+      return cmdContext(rest);
     case 'setup-skill':
       return cmdSetupSkill(rest);
     default:

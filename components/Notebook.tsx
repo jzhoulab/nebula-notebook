@@ -1318,6 +1318,13 @@ export const Notebook: React.FC = () => {
   useEffect(() => {
     agentTerminalService.setNotebookContext(currentFileId ?? null);
   }, [currentFileId]);
+  // Tab focus re-reports the driving notebook: with two tabs on different
+  // notebooks sharing one agent, "current" = the last tab the user focused.
+  useEffect(() => {
+    const onFocus = () => agentTerminalService.reportDrivingNow();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   // When a load finishes, seed the outputs-elision baseline from the loaded
   // cells (identical to the file right now) so even the FIRST autosave elides

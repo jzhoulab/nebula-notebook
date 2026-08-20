@@ -200,6 +200,8 @@ export function makeClient(url: string, notebookPath?: string): NebulaClient {
   return new NebulaClient({
     baseUrl: url,
     token: resolveAuthToken(),
+    // stderr, so --json stdout stays parseable.
+    onNotice: (n) => console.error(n),
     agentId: session?.agentId,
     clientName: session?.name ?? 'nebula-cli',
     // Sessions are explicit in the CLI (nebula session start/end).

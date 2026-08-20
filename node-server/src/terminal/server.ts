@@ -13,6 +13,7 @@ import { agentRegistry } from './agent-registry';
 import { terminalBindings, SHARED_SHELL_NAME, TerminalBindingScope } from './binding-store';
 import { remoteAgentConfig } from './remote-agent-config';
 import { discoverRemoteUser, pushRemoteAgentToken, REMOTE_TOKEN_PATH } from './remote-agent-identity';
+import { drivingContext } from './driving-context';
 import { fsService } from '../fs/fs-service';
 import {
   CreateTerminalRequest,
@@ -107,6 +108,25 @@ export async function setupTerminalRoutes(fastify: FastifyInstance): Promise<voi
     return reply.send(pushed
       ? { pushed: true, path: `~/${REMOTE_TOKEN_PATH}` }
       : { pushed: false, reason: 'your machine did not accept the token over the reverse tunnel (tunnel down or key not authorized)' });
+  });
+
+  // Driving context: which notebook the user is viewing, per agent terminal.
+  // Browser reports on notebook switch / tab focus / launch; agents read it
+  // back with `nebula context`. In-memory — the browser re-reports on focus.
+  fastify.put('/api/terminals/driving', async (request: FastifyRequest, reply: FastifyReply) => {
+    const body = (request.body as { terminal?: string; notebook?: string } | null) || {};
+    if (!body.terminal?.trim() || !body.notebook?.trim()) {
+      return reply.code(400).send({ error: 'terminal and notebook are required' });
+    }
+    drivingContext.setDriving(body.terminal.trim(), body.notebook.trim());
+    return reply.send({ ok: true });
+  });
+
+  fastify.get('/api/terminals/driving', async (request: FastifyRequest, reply: FastifyReply) => {
+    const terminal = String((request.query as any)?.terminal || '').trim();
+    if (!terminal) return reply.code(400).send({ error: 'terminal is required' });
+    const d = drivingContext.getDriving(terminal);
+    return reply.send(d ?? { notebook: null });
   });
 
   fastify.put('/api/terminals/agent-config', async (request: FastifyRequest, reply: FastifyReply) => {

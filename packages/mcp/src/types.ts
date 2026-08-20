@@ -481,6 +481,8 @@ export interface OperationResult {
   deletedCount?: number;
   /** Warning message (for session operations) */
   warning?: string;
+  /** Server-attached notice (e.g. the user is viewing a different notebook) */
+  notice?: string;
   /** Session duration in ms (for endAgentSession operation) */
   sessionDuration?: number;
 

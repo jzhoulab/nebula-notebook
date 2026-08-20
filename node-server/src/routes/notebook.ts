@@ -3,6 +3,7 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { drivingContext } from '../terminal/driving-context';
 import { fsService } from '../fs/fs-service';
 import { NebulaCell } from '../fs/types';
 import { operationRouter } from '../notebook/operation-router';
@@ -334,6 +335,16 @@ export default async function notebookRoutes(fastify: FastifyInstance) {
       const result = await operationRouter.applyOperation(operation);
       if (result.code === 'sealed_read_only') {
         return reply.code(403).send(result);
+      }
+      // Drift notice: when the calling agent declared its terminal (env var →
+      // header) and the user is viewing a DIFFERENT notebook than this
+      // operation targets, say so once per switch — in the one channel the
+      // agent cannot miss. Never blocks the operation.
+      const agentTerminal = request.headers['x-nebula-agent-terminal'];
+      const opPath = typeof operation.notebookPath === 'string' ? operation.notebookPath : '';
+      if (typeof agentTerminal === 'string' && agentTerminal && opPath && result.success !== false) {
+        const notice = drivingContext.driftNotice(agentTerminal, opPath);
+        if (notice) (result as Record<string, unknown>).notice = notice;
       }
       return reply.send(result);
     } catch (err) {

@@ -87,6 +87,14 @@ export interface NebulaClientConfig {
    * different host than the server. See resolveAuthToken() in the CLI.
    */
   token?: string;
+  /**
+   * Agent terminal id (NEBULA_AGENT_TERMINAL, injected by Nebula at launch).
+   * Sent as a header so the server can attach driving-context drift notices
+   * to operation results. Optional; absent for plain CLI use.
+   */
+  agentTerminal?: string;
+  /** Called with server-attached notices (e.g. driving-notebook drift). */
+  onNotice?: (notice: string) => void;
 }
 
 export interface KernelSession {
@@ -258,6 +266,8 @@ export class NebulaClient {
   private clientVersion?: string;
   private autoStartAgentSession: boolean;
   private token?: string;
+  private agentTerminal?: string;
+  private onNotice?: (notice: string) => void;
   private activeAgentSessions: Set<string> = new Set();
   private agentSessionInFlight: Map<string, Promise<ToolResult<{ warning?: string }>>> = new Map();
   private pinnedKernelSessions: Map<string, string> = new Map();
@@ -277,11 +287,17 @@ export class NebulaClient {
     this.clientVersion = config.clientVersion;
     this.autoStartAgentSession = config.autoStartAgentSession ?? Boolean(config.agentId);
     this.token = config.token?.trim() || undefined;
+    this.agentTerminal = (config.agentTerminal
+      ?? (typeof process !== 'undefined' ? process.env.NEBULA_AGENT_TERMINAL : undefined))?.trim() || undefined;
+    this.onNotice = config.onNotice;
   }
 
   /** Authorization header when a token is configured; empty otherwise. */
   private authHeaders(): Record<string, string> {
-    return this.token ? { Authorization: `Bearer ${this.token}` } : {};
+    const headers: Record<string, string> = {};
+    if (this.token) headers.Authorization = `Bearer ${this.token}`;
+    if (this.agentTerminal) headers['X-Nebula-Agent-Terminal'] = this.agentTerminal;
+    return headers;
   }
 
   private recordBackend(backend?: 'ui' | 'headless'): void {
@@ -1322,6 +1338,11 @@ export class NebulaClient {
     });
     if (result.success) {
       this.recordBackend(result.data?.backend);
+      // Server-attached notice (driving-notebook drift): surface through the
+      // caller's channel — the CLI prints to stderr, MCP appends to the tool
+      // result — so the agent sees it exactly when it acts.
+      const notice = (result.data as { notice?: string } | undefined)?.notice;
+      if (notice && this.onNotice) this.onNotice(notice);
     }
     return result;
   }
@@ -2329,6 +2350,10 @@ export class NebulaClient {
   }
 
   /** Allowed partitions/QoS for the current user + a live load snapshot. */
+  async getDrivingNotebook(terminal: string): Promise<ToolResult<{ notebook: string | null; at?: number }>> {
+    return this.fetch<{ notebook: string | null; at?: number }>(`/api/terminals/driving?terminal=${encodeURIComponent(terminal)}`);
+  }
+
   async getComputeArmSetup(): Promise<ToolResult<ComputeArmSetup>> {
     return this.fetch<ComputeArmSetup>('/api/compute/arm-setup');
   }

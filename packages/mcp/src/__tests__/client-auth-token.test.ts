@@ -86,3 +86,31 @@ describe('resolveAuthToken', () => {
     expect(resolveAuthToken()).toBeUndefined();
   });
 });
+
+describe('agent terminal header and drift notices', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.NEBULA_AGENT_TERMINAL;
+  });
+
+  it('sends X-Nebula-Agent-Terminal from the env var Nebula injects at launch', async () => {
+    process.env.NEBULA_AGENT_TERMINAL = 'agent-t9';
+    const fetchMock = vi.fn(async (_u: RequestInfo | URL, _init?: RequestInit) => ok());
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new NebulaClient({ baseUrl: 'http://localhost:3000' });
+    await client.listFiles('/tmp');
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)['X-Nebula-Agent-Terminal']).toBe('agent-t9');
+  });
+
+  it('surfaces a server-attached notice on operation results via onNotice', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      success: true, backend: 'headless',
+      notice: 'note: the user is now viewing /w/nb2.ipynb',
+    }), { status: 200 })));
+    const notices: string[] = [];
+    const client = new NebulaClient({ baseUrl: 'http://localhost:3000', onNotice: (n) => notices.push(n) });
+    await client.applyOperation({ type: 'readCell', notebookPath: '/w/nb1.ipynb', cellId: 'c1' } as any);
+    expect(notices).toEqual(['note: the user is now viewing /w/nb2.ipynb']);
+  });
+});

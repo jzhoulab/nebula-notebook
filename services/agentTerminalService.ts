@@ -210,9 +210,26 @@ class AgentTerminalService {
     this.panelOpener = opener;
   }
 
+  /**
+   * Tell the server which notebook this tab is viewing, keyed by the agent
+   * terminal — the authoritative side of "this notebook" resolution
+   * (`nebula context` + act-time drift notices). Fire-and-forget; the browser
+   * re-reports on every switch/focus, so a lost report heals itself.
+   */
+  reportDrivingNow(): void {
+    const terminal = this.state.terminalId;
+    if (!terminal || !this.notebookPath) return;
+    void fetch('/api/terminals/driving', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terminal, notebook: this.notebookPath }),
+    }).catch(() => { /* offline — next focus/switch retries */ });
+  }
+
   setNotebookContext(path: string | null): void {
     const prev = this.notebookPath;
     this.notebookPath = path;
+    if (path && path !== prev) this.reportDrivingNow();
     // Shared-agent origin tagging: when the driving notebook changes while an
     // agent is live, prefill the TUI input with a context tag (NO newline —
     // it becomes the prefix of the user's next message and is easy to delete;
@@ -365,7 +382,17 @@ class AgentTerminalService {
    * agent whose cwd is its workspace mirror; `workdir` rides into the local
    * bootstrap prompt so the agent knows where the project actually lives.
    */
-  private buildAgentCommand(kind: 'claude' | 'codex', resume: boolean, envPrefix = '', sessionId?: string, continueProject = false, accessFlags = '', workdir?: string | null): string {
+  /**
+   * NEBULA_AGENT_TERMINAL=<id> for the agent's environment: `nebula context`
+   * and the server's drift notices key on it. Slug ids only — anything else
+   * is dropped rather than shell-escaped into a launch line.
+   */
+  private terminalEnvPrefix(): string {
+    const id = this.state.terminalId;
+    return id && /^[A-Za-z0-9._-]+$/.test(id) ? `NEBULA_AGENT_TERMINAL=${id} ` : '';
+  }
+
+  private buildAgentCommand(kind: 'claude' | 'codex', resume: boolean, envPrefix = '', sessionId?: string, continueProject = false, accessFlags = '', workdir?: string | null, remote = false): string {
     if (continueProject) {
       // "Pick a session": both open the CLI's own cwd-scoped INTERACTIVE
       // picker (claude --resume with no id; codex resume) — finding every
@@ -383,7 +410,7 @@ class AgentTerminalService {
       const flag = sessionId ? `--resume ${sessionId}` : '--continue';
       return `${envPrefix}claude${accessFlags} ${flag} ${shellSingleQuote(reorient)}`;
     }
-    const bootstrap = shellSingleQuote(this.buildBootstrapPrompt(envPrefix !== '', workdir));
+    const bootstrap = shellSingleQuote(this.buildBootstrapPrompt(remote, workdir));
     if (kind === 'claude' && sessionId) {
       return `${envPrefix}claude${accessFlags} --session-id ${sessionId} ${bootstrap}`;
     }
@@ -417,7 +444,7 @@ class AgentTerminalService {
       ? '[ -z "$CLAUDE_CODE_OAUTH_TOKEN_NEBULA" ] || export CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN_NEBULA"; '
       : '';
     const agentCmd = tokenMap + `mkdir -p ${cwd} && cd ${cwd} && ` +
-      this.buildAgentCommand(kind, resume, `NEBULA_URL=${cfg.localUrl} `, sessionId, continueProject);
+      this.buildAgentCommand(kind, resume, `NEBULA_URL=${cfg.localUrl} ${this.terminalEnvPrefix()}`, sessionId, continueProject, '', undefined, true);
     // `ssh host cmd` runs a non-login, non-interactive shell on the user's
     // machine — PATH additions from .zprofile/.zshrc (homebrew, nvm, npm -g)
     // are absent and the agent CLI isn't found. Re-enter the user's own shell
@@ -463,7 +490,7 @@ class AgentTerminalService {
         : ` -c ${shellSingleQuote(`sandbox_workspace_write.writable_roots=[${JSON.stringify(workdir)}]`)}`)
       : '';
     const inner = `mkdir -p ${cwd} && cd ${cwd} && ` +
-      this.buildAgentCommand(kind, resume, '', sessionId, continueProject, accessFlags, workdir);
+      this.buildAgentCommand(kind, resume, this.terminalEnvPrefix(), sessionId, continueProject, accessFlags, workdir);
     // Re-enter the user's login+interactive shell AT LAUNCH TIME (same wrapper
     // remote launches use): a pty's env is frozen when its shell starts, so a
     // long-lived pty predating an env change (agent auth tokens, PATH) would
@@ -545,7 +572,13 @@ class AgentTerminalService {
     // tags messages when the driving notebook changes.
     parts.push(
       'If a message begins with "[now driving: <path>]", the user has switched notebooks — ' +
-      'operate on that notebook from then on (nebula commands always take explicit paths).'
+      'operate on that notebook from then on (nebula commands always take explicit paths). ' +
+      'The user may also switch notebooks/tabs silently: when an instruction says "this notebook" or ' +
+      '"this cell" without a path, run `nebula context` first — it prints the notebook the user is ' +
+      'viewing RIGHT NOW. You never need to poll it: whenever you act on a notebook the user is no ' +
+      'longer viewing, the command output carries a one-time "note: the user is now viewing …" line — ' +
+      'finish tasks that named their notebook explicitly, but resolve new path-less instructions ' +
+      'against the CURRENT notebook, and confirm instead of guessing when a mid-task pivot is ambiguous.'
     );
     return sanitizePromptText(parts.join(' '));
   }
@@ -645,6 +678,7 @@ class AgentTerminalService {
     // the loopback piggyback when the topology allows it).
     if (remoteLine) void pushRemoteAgentToken();
     send.sender(`${launchLine}\r`);
+    this.reportDrivingNow();
     markOnboardingStep('launchedAgent');
     // Project-scoped agent ledger: tell the server what launched where, and
     // make this the browser's active agent (agents are decoupled from
