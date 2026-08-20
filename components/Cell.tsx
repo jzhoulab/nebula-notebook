@@ -143,6 +143,11 @@ const CellComponent: React.FC<Props> = ({
 }) => {
   const { toast } = useNotification();
   const [isAiOpen, setIsAiOpen] = useState(false);
+  // Sticky toolbar: true while the toolbar block is pinned to the viewport
+  // top (its sentinel has scrolled above it). Drives stuck-only styling —
+  // squared corners (no see-through notches over code) and a shadow.
+  const [isToolbarStuck, setIsToolbarStuck] = useState(false);
+  const stickySentinelRef = useRef<HTMLDivElement>(null);
   const [aiPrompt, setAiPrompt] = useState('');
   // Focus state: 'editor' = editing code, 'cell' = command mode, 'none' = unfocused
   const [focusState, setFocusState] = useState<'none' | 'cell' | 'editor'>('none');
@@ -336,6 +341,19 @@ const CellComponent: React.FC<Props> = ({
   // release the pin. The <pre> → settled CM delta is typically <10px.
   const [editorMounted, setEditorMounted] = useState(false);
   const editorWrapRef = useRef<HTMLDivElement>(null);
+
+  // Stuck detection for the sticky toolbar: the zero-height sentinel sits
+  // just above the sticky block; when it leaves through the viewport top the
+  // block is pinned. (position:sticky itself has no CSS-observable state.)
+  useEffect(() => {
+    const el = stickySentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsToolbarStuck(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (editorMounted) return;
@@ -575,9 +593,18 @@ const CellComponent: React.FC<Props> = ({
       className={`group relative mb-2 rounded-lg border bg-white shadow-sm transition-all hover:shadow-md ${getBorderClass()} ${isHighlighted ? 'cell-highlight-animation' : ''} ${agentActive ? 'ring-2 ring-purple-300 ring-offset-1' : ''} ${isSelected ? 'ring-2 ring-blue-300 border-blue-300 bg-blue-50/40' : ''} ${isDragging ? 'opacity-50' : ''} ${focusState === 'cell' ? 'outline-none' : ''}`}
       style={dropIndicator ? { boxShadow: dropIndicator === 'above' ? 'inset 0 3px 0 0 #3b82f6' : 'inset 0 -3px 0 0 #3b82f6' } : undefined}
     >
+      {/* Sticky toolbar block: pins to the viewport top while any part of
+          this cell spans it (VS Code / JupyterLab pattern), so Run/AI/etc —
+          and the agent prompt bar — stay reachable from the bottom of a long
+          cell. The sentinel right above it is how we know we're pinned. */}
+      <div ref={stickySentinelRef} data-testid={`cell-sticky-sentinel-${cell.id}`} aria-hidden="true" />
+      <div
+        data-testid={`cell-sticky-bar-${cell.id}`}
+        className={`sticky top-0 z-30 ${isToolbarStuck ? 'shadow-md' : ''}`}
+      >
       {/* Top Toolbar - click here to enter command mode */}
       <div
-        className="flex items-center gap-1 px-2 py-1 bg-slate-50 border-b border-slate-100 rounded-t-lg cursor-pointer"
+        className={`flex items-center gap-1 px-2 py-1 bg-slate-50 border-b border-slate-100 cursor-pointer ${isToolbarStuck ? '' : 'rounded-t-lg'}`}
         onClick={handleTopbarClick}
       >
         {/* Left: Cell info, Run button, and action buttons */}
@@ -731,6 +758,7 @@ const CellComponent: React.FC<Props> = ({
           </button>
         </div>
       )}
+      </div>
 
       {/* Editor Area */}
       <div ref={editorWrapRef} onClick={(e) => {

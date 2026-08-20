@@ -2,7 +2,7 @@
  * Tests for Cell component
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { Cell } from '../Cell';
 import { Cell as ICell } from '../../types';
 import { NotificationProvider } from '../NotificationSystem';
@@ -394,5 +394,69 @@ describe('Cell history preview line diff', () => {
       previewDiffStatus: 'modified',
     });
     expect(container.querySelector('[data-testid^="diff-line-"]')).toBeNull();
+  });
+});
+
+describe('sticky cell toolbar (long-cell ergonomics)', () => {
+  // Lab report: on a long cell you scroll to the output and the toolbar (Run,
+  // AI, …) — and the agent prompt bar it opens — are far off-screen at the
+  // cell top. The toolbar block is position:sticky inside the cell, so it
+  // pins to the viewport top while any part of its cell spans it.
+  const cell = { id: 'sticky-1', type: 'code' as const, content: 'x=1', outputs: [], isExecuting: false };
+  const props = {
+    cell, index: 0, isActive: false,
+    allCellsRef: { current: [cell] },
+    cellIndexMapRef: { current: new Map([[cell.id, 0]]) },
+    onUpdate: vi.fn(), onRun: vi.fn(), onRunAndAdvance: vi.fn(), onDelete: vi.fn(),
+    onMove: vi.fn(), onChangeType: vi.fn(), onClick: vi.fn(), onAddCell: vi.fn(),
+    onActivate: vi.fn(), onNavigateCell: vi.fn(),
+  };
+
+  it('wraps the toolbar in a sticky container', () => {
+    renderCell(props as any);
+    const bar = screen.getByTestId('cell-sticky-bar-sticky-1');
+    expect(bar.className).toContain('sticky');
+    expect(bar.className).toContain('top-0');
+  });
+
+  it('the agent prompt bar opens INSIDE the sticky block, so it is visible wherever you are in the cell', () => {
+    renderCell(props as any);
+    fireEvent.click(screen.getByTitle('AI Assistant'));
+    const bar = screen.getByTestId('cell-sticky-bar-sticky-1');
+    const input = screen.getByPlaceholderText(/Ask the agent/);
+    expect(bar.contains(input)).toBe(true);
+  });
+
+  it('squares its corners and gains a shadow while stuck, and reverts when unstuck', () => {
+    // Capture observer instances so the sentinel's visibility can be scripted.
+    const instances: Array<{ cb: IntersectionObserverCallback; targets: Element[] }> = [];
+    const RealIO = global.IntersectionObserver;
+    global.IntersectionObserver = class {
+      targets: Element[] = [];
+      constructor(private cb: IntersectionObserverCallback) { instances.push({ cb: this.cb, targets: this.targets }); }
+      observe(el: Element) { this.targets.push(el); }
+      unobserve() {}
+      disconnect() {}
+    } as any;
+    try {
+      renderCell(props as any);
+      const sentinel = screen.getByTestId('cell-sticky-sentinel-sticky-1');
+      const inst = instances.find((i) => i.targets.includes(sentinel))!;
+      expect(inst).toBeDefined();
+      const bar = screen.getByTestId('cell-sticky-bar-sticky-1');
+      expect(bar.className).not.toContain('shadow-md');
+
+      act(() => {
+        inst.cb([{ isIntersecting: false, boundingClientRect: { top: -10 }, target: sentinel } as any], null as any);
+      });
+      expect(bar.className).toContain('shadow-md');
+
+      act(() => {
+        inst.cb([{ isIntersecting: true, boundingClientRect: { top: 40 }, target: sentinel } as any], null as any);
+      });
+      expect(bar.className).not.toContain('shadow-md');
+    } finally {
+      global.IntersectionObserver = RealIO;
+    }
   });
 });
