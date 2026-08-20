@@ -847,6 +847,19 @@ export async function startMockNebulaServer(): Promise<MockNebulaServer> {
         return;
       }
 
+      if (method === 'GET' && pathname === '/api/compute/arm-setup') {
+        if (!computeEnabled) {
+          sendJson(res, 400, { error: 'scheduler not available' });
+          return;
+        }
+        sendJson(res, 200, {
+          configured: false,
+          prompt: 'You are enabling aarch64 (ARM) compute allocations… srun -p armq --qos=opportunistic … NEBULA_ARM64_NODE_BIN … NEBULA_ARM64_DIR …',
+          facts: { armPartitions: [{ name: 'armq', qos: ['opportunistic'] }] },
+        });
+        return;
+      }
+
       if (method === 'GET' && pathname === '/api/compute/partitions') {
         if (!computeEnabled) {
           sendJson(res, 200, { enabled: false, associations: null, load: null });

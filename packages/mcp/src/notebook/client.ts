@@ -235,6 +235,11 @@ export interface ComputePartitions {
   } | null;
 }
 
+export interface ComputeArmSetup {
+  configured: boolean;
+  prompt: string;
+}
+
 export interface ComputeStartEstimate {
   startsAt?: string;
   nodes?: string[];
@@ -2324,6 +2329,10 @@ export class NebulaClient {
   }
 
   /** Allowed partitions/QoS for the current user + a live load snapshot. */
+  async getComputeArmSetup(): Promise<ToolResult<ComputeArmSetup>> {
+    return this.fetch<ComputeArmSetup>('/api/compute/arm-setup');
+  }
+
   async listPartitions(): Promise<ToolResult<ComputePartitions>> {
     return this.fetch<ComputePartitions>('/api/compute/partitions');
   }

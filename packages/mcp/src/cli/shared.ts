@@ -303,6 +303,10 @@ export function toCliError(message: string | undefined, notebookPath?: string): 
       'relaunching the agent from Nebula pushes one; a token-less client is only accepted when its tunnel terminates on the server host'
     );
   }
+  if (/NEBULA_ARM64_NODE_BIN/.test(msg)) {
+    // Cross-arch refusal at submit: hand the user the agent-executable fix.
+    return new CliError(msg, EXIT.ERROR, 'get an agent-ready setup guide with: nebula compute arm-setup');
+  }
   if (/agent session required/i.test(msg)) {
     return new CliError(msg, EXIT.ERROR, `start one with: nebula session start ${notebookPath ?? '<path>'}`);
   }

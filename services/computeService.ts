@@ -17,6 +17,23 @@ export interface Associations {
   defaultQos?: string;
 }
 
+export interface ArmSetupInfo {
+  configured: boolean;
+  prompt: string;
+}
+
+/** Agent-executable ARM setup prompt with this installation's real facts. */
+export const getArmSetup = async (): Promise<ArmSetupInfo | null> => {
+  try {
+    const resp = await fetch(`${API_BASE}/compute/arm-setup`, { headers: authHeaders() });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return { configured: data.configured === true, prompt: typeof data.prompt === 'string' ? data.prompt : '' };
+  } catch {
+    return null;
+  }
+};
+
 export interface PartitionLoad {
   name: string;
   up: boolean;

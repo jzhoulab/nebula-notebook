@@ -24,6 +24,7 @@ import {
   type Allocation,
   type AllocationSpec,
   type PartitionLoad,
+  getArmSetup,
 } from '../services/computeService';
 import { ModalShell } from './ModalShell';
 
@@ -139,6 +140,11 @@ function partitionFit(p: PartitionLoad, req: Req): { ok: boolean; reason: string
 export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onUseForKernels, onUseWhenReady }: ComputeAllocationModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // aarch64 queues need an ARM runtime on the server; when it's missing we
+  // hand over an agent-executable setup prompt instead of letting the submit
+  // fail with an env-var error. null = not fetched / unavailable.
+  const [armSetup, setArmSetup] = useState<{ configured: boolean; prompt: string } | null>(null);
+  const [armPromptCopied, setArmPromptCopied] = useState(false);
   const [data, setData] = useState<ComputePartitions | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
 
@@ -304,6 +310,14 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
   const selectedLoad = loadByName.get(partition);
   // Only the GPU model(s) that actually exist in the selected queue.
   const partitionGpuTypes = selectedLoad?.gpus?.map((g) => g.type) ?? [];
+  const selectedIsArm = Boolean(selectedLoad?.archs?.length && selectedLoad.archs.every((a) => a !== 'x86_64'));
+
+  useEffect(() => {
+    if (!selectedIsArm || armSetup !== null) return;
+    let cancelled = false;
+    getArmSetup().then((info) => { if (!cancelled && info) setArmSetup(info); });
+    return () => { cancelled = true; };
+  }, [selectedIsArm, armSetup]);
   const selectedFit = selectedLoad ? partitionFit(selectedLoad, req) : null;
   const betterExists = recommended && recommended.name !== partition &&
     (!selectedFit || recommended.fit.score > selectedFit.score + 1);
@@ -367,7 +381,7 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Partition / Queue</label>
-                  <select className={inputClass} value={partition} onChange={(e) => setPartition(e.target.value)}>
+                  <select className={inputClass} aria-label="Partition / Queue" value={partition} onChange={(e) => setPartition(e.target.value)}>
                     {partitions.length === 0 && <option value="">(none available)</option>}
                     {partitions.map((p) => {
                       const lp = loadByName.get(p);
@@ -377,6 +391,25 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
                       return <option key={p} value={p}>{p}{free ? ` — ${free}` : ''}{arch ? ` · ${arch}` : ''}</option>;
                     })}
                   </select>
+                  {selectedIsArm && armSetup && !armSetup.configured && (
+                    <div data-testid="arm-setup-banner" className="mt-2 p-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                      This queue runs {selectedLoad?.archs?.join('+')} nodes, but this server has no ARM runtime configured — allocations here will be refused.
+                      Setup is a one-time task; the easiest path is handing it to an agent:
+                      <button
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(armSetup.prompt);
+                            setArmPromptCopied(true);
+                            setTimeout(() => setArmPromptCopied(false), 2500);
+                          } catch { /* clipboard unavailable */ }
+                        }}
+                        className="ml-1 px-2 py-0.5 rounded bg-amber-600 text-white font-medium hover:bg-amber-700"
+                      >
+                        {armPromptCopied ? 'Copied!' : 'Copy setup prompt'}
+                      </button>
+                      <span className="block mt-1 text-amber-700/80">Paste it to an agent running on the server (or run: nebula compute arm-setup).</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className={labelClass}>Walltime (hours)</label>

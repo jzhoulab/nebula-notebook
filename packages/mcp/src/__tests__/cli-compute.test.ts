@@ -134,6 +134,15 @@ describe('nebula compute CLI', () => {
     expect(r.stdout).toContain('hint:');
   });
 
+  it('compute arm-setup: prints the agent prompt with real cluster values', async () => {
+    const r = await runCli(['compute', 'arm-setup']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('aarch64');
+    expect(r.stdout).toContain('NEBULA_ARM64_NODE_BIN');
+    expect(r.stdout).toContain('armq');
+    expect(r.stdout).toContain('hint:');
+  });
+
   // ===========================================================================
   // alloc
   // ===========================================================================

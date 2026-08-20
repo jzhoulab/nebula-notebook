@@ -9,6 +9,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import * as os from 'os';
 import { allocationService } from '../scheduler/allocation-service';
 import type { JobSpec } from '../scheduler/types';
+import { buildArmSetupPrompt, gatherArmSetupFacts } from '../scheduler/arm-setup-prompt';
 
 function currentUser(): string {
   return process.env.USER || process.env.LOGNAME || os.userInfo().username;
@@ -72,6 +73,19 @@ export default async function computeRoutes(fastify: FastifyInstance) {
     if (!spec.partition) return reply.code(400).send({ error: 'partition is required' });
     const estimate = await sched.estimateStart(spec);
     return reply.send(estimate);
+  });
+
+  /**
+   * Agent-executable ARM setup: this installation's facts + a rendered prompt
+   * the user pastes to an agent. configured=true means an arm64 runtime is
+   * already wired in (the UI then shows nothing).
+   */
+  fastify.get('/compute/arm-setup', async (_req: FastifyRequest, reply: FastifyReply) => {
+    const sched = allocationService.getScheduler();
+    const ctx = allocationService.getLaunchContext();
+    if (!sched || !ctx) return reply.code(400).send({ error: 'scheduler not available' });
+    const facts = await gatherArmSetupFacts(sched, ctx);
+    return reply.send({ configured: facts.configured, prompt: buildArmSetupPrompt(facts), facts });
   });
 
   /** List current allocations (pending / running / active / ended). */

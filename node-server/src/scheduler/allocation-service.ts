@@ -170,6 +170,10 @@ export class AllocationService {
     return this.scheduler;
   }
 
+  getLaunchContext(): LaunchContext | null {
+    return this.ctx;
+  }
+
   list(): Allocation[] {
     return [...this.allocations.values()].sort((a, b) => b.createdAt - a.createdAt);
   }

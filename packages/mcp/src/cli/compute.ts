@@ -48,6 +48,7 @@ scheduler report "no scheduler on this server" — check status first.
                                      allocation's server (must be active);
                                      after this, nebula run executes there
   compute cancel <id>                cancel an allocation (frees the nodes)
+  compute arm-setup                  agent prompt to enable aarch64 partitions
 
 Etiquette: allocations consume real cluster resources — request modest sizes,
 cancel what you created when done, never cancel allocations you didn't create,
@@ -87,6 +88,8 @@ export async function cmdCompute(argv: string[]): Promise<number> {
       return computeLs(rest);
     case 'use':
       return computeUse(rest);
+    case 'arm-setup':
+      return computeArmSetup(rest);
     case 'cancel':
       return computeCancel(rest);
     default:
@@ -429,6 +432,36 @@ async function computeUse(argv: string[]): Promise<number> {
 // =============================================================================
 // compute cancel
 // =============================================================================
+
+/**
+ * `nebula compute arm-setup` — print an agent-executable prompt (with this
+ * installation's real paths/partitions) for enabling aarch64 allocations.
+ */
+async function computeArmSetup(argv: string[]): Promise<number> {
+  const { values } = parse(argv);
+  if (values.help) {
+    console.log(`usage: nebula compute arm-setup
+
+Prints a copy-paste prompt for an agent to set up aarch64 (ARM) compute
+support on this Nebula installation — filled with this cluster's real
+paths, partitions, and QOS requirements.`);
+    return EXIT.OK;
+  }
+  const client = makeClient(resolveUrl(values.url));
+  const result = await client.getComputeArmSetup();
+  if (!result.success) throw toCliError(result.error);
+  if (values.json) {
+    printJson(result.data);
+    return EXIT.OK;
+  }
+  if (result.data!.configured) {
+    console.log('ARM runtime already configured on this server — nothing to set up.');
+    return EXIT.OK;
+  }
+  console.log(result.data!.prompt);
+  printHint('paste the text above to an agent working on the server', values);
+  return EXIT.OK;
+}
 
 async function computeCancel(argv: string[]): Promise<number> {
   const { values, positionals } = parse(argv);
