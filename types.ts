@@ -32,6 +32,8 @@ export interface Cell {
   lastExecutionMs?: number;
   scrolled?: boolean; // Output collapsed state: true = collapsed with scrollbar (Jupyter standard)
   scrolledHeight?: number; // Height of output area when in scrolled mode (pixels)
+  sourceCollapsed?: boolean; // Source (code) collapsed to a fixed height with its own scrollbar
+  sourceHeight?: number; // Height of the source area when collapsed (pixels)
   _metadata?: Record<string, unknown>; // Preserve unknown metadata from external tools
 }
 

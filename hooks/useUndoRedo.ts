@@ -104,6 +104,8 @@ interface UseUndoRedoResult {
   changeType: (cellId: string, newType: CellType) => void;
   setCellScrolled: (cellId: string, scrolled: boolean) => void;
   setCellScrolledHeight: (cellId: string, height: number) => void;
+  setCellSourceCollapsed: (cellId: string, collapsed: boolean) => void;
+  setCellSourceHeight: (cellId: string, height: number) => void;
   // Batch operations (for compound actions)
   batch: (operations: Operation[]) => void;
   // Flush pending content for a single cell (O(1) - call before keyframe operations)
@@ -384,6 +386,24 @@ export const useUndoRedo = (initialCells: Cell[]): UseUndoRedoResult => {
     const oldHeight = cell.scrolledHeight;
     if (oldHeight === height) return; // No-op guard
     updateMetadata(cellId, { scrolledHeight: { old: oldHeight, new: height } });
+  }, [cells, updateMetadata]);
+
+  // Convenience wrappers: collapse the cell SOURCE to a fixed height, and
+  // set that height (mirrors the output-collapse pair above).
+  const setCellSourceCollapsed = useCallback((cellId: string, collapsed: boolean) => {
+    const cell = cells.find(c => c.id === cellId);
+    if (!cell) return;
+    const oldCollapsed = cell.sourceCollapsed ?? false;
+    if (oldCollapsed === collapsed) return;
+    updateMetadata(cellId, { sourceCollapsed: { old: oldCollapsed, new: collapsed } });
+  }, [cells, updateMetadata]);
+
+  const setCellSourceHeight = useCallback((cellId: string, height: number) => {
+    const cell = cells.find(c => c.id === cellId);
+    if (!cell) return;
+    const oldHeight = cell.sourceHeight;
+    if (oldHeight === height) return;
+    updateMetadata(cellId, { sourceHeight: { old: oldHeight, new: height } });
   }, [cells, updateMetadata]);
 
   // Execute a batch of operations as a single undoable action
@@ -921,6 +941,8 @@ export const useUndoRedo = (initialCells: Cell[]): UseUndoRedoResult => {
     changeType,
     setCellScrolled,
     setCellScrolledHeight,
+    setCellSourceCollapsed,
+    setCellSourceHeight,
     batch,
     flushCell,
     peekUndo,

@@ -1386,11 +1386,18 @@ export class FilesystemService {
       if (nbCell.metadata?.scrolled_height !== undefined) {
         cell.scrolledHeight = nbCell.metadata.scrolled_height;
       }
+      // Source (code) collapse — the same idea applied to the cell's source.
+      if (typeof nbCell.metadata?.source_collapsed === 'boolean') {
+        cell.sourceCollapsed = nbCell.metadata.source_collapsed;
+      }
+      if (typeof nbCell.metadata?.source_height === 'number') {
+        cell.sourceHeight = nbCell.metadata.source_height;
+      }
 
       // Preserve unknown metadata
       const unknownMetadata: Record<string, unknown> = {};
       for (const key of Object.keys(nbCell.metadata || {})) {
-        if (!['nebula_id', 'scrolled', 'scrolled_height'].includes(key)) {
+        if (!['nebula_id', 'scrolled', 'scrolled_height', 'source_collapsed', 'source_height'].includes(key)) {
           unknownMetadata[key] = nbCell.metadata[key];
         }
       }
@@ -1522,6 +1529,12 @@ export class FilesystemService {
       }
       if (cell.scrolledHeight !== undefined) {
         cellMetadata.scrolled_height = cell.scrolledHeight;
+      }
+      if (cell.sourceCollapsed !== undefined) {
+        cellMetadata.source_collapsed = cell.sourceCollapsed;
+      }
+      if (cell.sourceHeight !== undefined) {
+        cellMetadata.source_height = cell.sourceHeight;
       }
 
       const nbCell: JupyterCell = {

@@ -45,6 +45,8 @@ interface CellSnapshot {
   content: string;
   scrolled?: boolean;
   scrolledHeight?: number;
+  sourceCollapsed?: boolean;
+  sourceHeight?: number;
   metadataRef?: Cell['_metadata'];
   outputsRef?: Cell['outputs'];
 }
@@ -94,6 +96,8 @@ export function useAutosave({ fileId, cells, onSave, enabled = true, loading = f
     content: cell.content,
     scrolled: cell.scrolled,
     scrolledHeight: cell.scrolledHeight,
+    sourceCollapsed: cell.sourceCollapsed,
+    sourceHeight: cell.sourceHeight,
     metadataRef: cell._metadata,
     outputsRef: cell.outputs,
   }), []);
@@ -103,6 +107,8 @@ export function useAutosave({ fileId, cells, onSave, enabled = true, loading = f
     cell.content === snapshot.content &&
     cell.scrolled === snapshot.scrolled &&
     cell.scrolledHeight === snapshot.scrolledHeight &&
+    cell.sourceCollapsed === snapshot.sourceCollapsed &&
+    cell.sourceHeight === snapshot.sourceHeight &&
     cell._metadata === snapshot.metadataRef &&
     cell.outputs === snapshot.outputsRef
   ), []);

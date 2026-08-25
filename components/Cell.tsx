@@ -4,11 +4,12 @@ import { CellOutput } from './CellOutput';
 import { CodeEditor } from './CodeEditor';
 import { MarkdownPreview } from './MarkdownPreview';
 import { computeLineDiff } from '../lib/diffUtils';
-import { Play, Trash2, ArrowUp, ArrowDown, Bot, Loader2, FileText, Code as CodeIcon, Plus, GripVertical } from 'lucide-react';
+import { Play, Trash2, ArrowUp, ArrowDown, Bot, Loader2, FileText, Code as CodeIcon, Plus, GripVertical, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { agentTerminalService, SendResult } from '../services/agentTerminalService';
 import { useNotification } from './NotificationSystem';
 import { IndentationConfig, DEFAULT_INDENTATION } from '../utils/indentationDetector';
 import { shouldForceInteractiveFeatures } from '../utils/editorPerf';
+import { SOURCE_MIN_HEIGHT_PX, SOURCE_DEFAULT_HEIGHT_PX, SOURCE_COLLAPSE_THRESHOLD_PX } from '../config';
 
 interface SearchHighlight {
   query: string;
@@ -85,6 +86,8 @@ interface Props {
   onSave?: () => void;
   onSetCellScrolled?: (id: string, scrolled: boolean) => void; // Toggle output scroll/wrap mode
   onSetCellScrolledHeight?: (id: string, height: number) => void; // Set output area height in scroll mode
+  onSetCellSourceCollapsed?: (id: string, collapsed: boolean) => void; // Collapse the SOURCE to a fixed height
+  onSetCellSourceHeight?: (id: string, height: number) => void; // Height of the collapsed source area
   onCursorActivity?: (cellId: string, pos: number) => void; // For search navigation relative to cursor
   searchHighlight?: SearchHighlight | null;
   searchCurrentMatch?: { cellId: string; startIndex: number; endIndex: number } | null;
@@ -127,6 +130,8 @@ const CellComponent: React.FC<Props> = ({
   onSave,
   onSetCellScrolled,
   onSetCellScrolledHeight,
+  onSetCellSourceCollapsed,
+  onSetCellSourceHeight,
   onCursorActivity,
   searchHighlight,
   searchCurrentMatch,
@@ -148,6 +153,17 @@ const CellComponent: React.FC<Props> = ({
   // squared corners (no see-through notches over code) and a shadow.
   const [isToolbarStuck, setIsToolbarStuck] = useState(false);
   const stickySentinelRef = useRef<HTMLDivElement>(null);
+  // Source collapse: same idiom as output collapse — a fixed, drag-adjustable
+  // height with its own scrollbar, persisted per cell (source_collapsed /
+  // source_height in .ipynb metadata) so long cells stay tamed across reloads.
+  const sourceCollapsed = cell.sourceCollapsed === true;
+  const [sourceHeight, setSourceHeight] = useState(cell.sourceHeight ?? SOURCE_DEFAULT_HEIGHT_PX);
+  const [isSourceResizing, setIsSourceResizing] = useState(false);
+  const [sourceTall, setSourceTall] = useState(false);
+  const sourceScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (cell.sourceHeight !== undefined) setSourceHeight(cell.sourceHeight);
+  }, [cell.sourceHeight]);
   const [aiPrompt, setAiPrompt] = useState('');
   // Focus state: 'editor' = editing code, 'cell' = command mode, 'none' = unfocused
   const [focusState, setFocusState] = useState<'none' | 'cell' | 'editor'>('none');
@@ -341,6 +357,44 @@ const CellComponent: React.FC<Props> = ({
   // release the pin. The <pre> → settled CM delta is typically <10px.
   const [editorMounted, setEditorMounted] = useState(false);
   const editorWrapRef = useRef<HTMLDivElement>(null);
+
+  // Offer the collapse control only when the source is actually long enough
+  // to be a nuisance (measured, not guessed from line count/font).
+  useEffect(() => {
+    const el = sourceScrollRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = sourceCollapsed ? el.scrollHeight : el.offsetHeight;
+      setSourceTall(h > SOURCE_COLLAPSE_THRESHOLD_PX);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return; // jsdom / older browsers
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [sourceCollapsed, cell.content, editorMounted]);
+
+  const handleSourceResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsSourceResizing(true);
+    const startY = e.clientY;
+    const startHeight = sourceHeight;
+    let finalHeight = startHeight;
+    const onMove = (ev: MouseEvent) => {
+      finalHeight = Math.max(SOURCE_MIN_HEIGHT_PX, startHeight + (ev.clientY - startY));
+      setSourceHeight(finalHeight);
+    };
+    const onUp = () => {
+      setIsSourceResizing(false);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      // Persist at drag END only — one history entry per resize.
+      if (finalHeight !== startHeight) onSetCellSourceHeight?.(cell.id, finalHeight);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [sourceHeight, cell.id, onSetCellSourceHeight]);
 
   // Stuck detection for the sticky toolbar: the zero-height sentinel sits
   // just above the sticky block; when it leaves through the viewport top the
@@ -659,6 +713,17 @@ const CellComponent: React.FC<Props> = ({
           </button>
 
           {/* Action buttons after Run */}
+          {(sourceTall || sourceCollapsed) && onSetCellSourceCollapsed && (
+            <button
+              data-testid={`source-collapse-${cell.id}`}
+              onClick={(e) => { e.stopPropagation(); onSetCellSourceCollapsed(cell.id, !sourceCollapsed); }}
+              aria-pressed={sourceCollapsed}
+              title={sourceCollapsed ? 'Expand code (show full cell)' : 'Collapse code to a fixed height'}
+              className={`p-1 rounded transition-colors ${sourceCollapsed ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
+            >
+              {sourceCollapsed ? <ChevronsUpDown className="w-3.5 h-3.5" /> : <ChevronsDownUp className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <button
             onClick={(e) => { e.stopPropagation(); if (!isLocked) setIsAiOpen(!isAiOpen); }}
             disabled={isLocked}
@@ -760,7 +825,15 @@ const CellComponent: React.FC<Props> = ({
       )}
       </div>
 
-      {/* Editor Area */}
+      {/* Editor Area — wrapped in a collapse container. The wrapper (not
+          editorWrapRef) owns the fixed height, so the <pre>→CodeMirror height
+          pinning that prevents scroll jumps is untouched. */}
+      <div
+        ref={sourceScrollRef}
+        data-testid={`source-area-${cell.id}`}
+        className={sourceCollapsed ? 'overflow-y-auto overflow-x-hidden border-b border-slate-100' : ''}
+        style={sourceCollapsed ? { height: `${sourceHeight}px` } : undefined}
+      >
       <div ref={editorWrapRef} onClick={(e) => {
         e.stopPropagation();
         if (!editorMounted && !showsMarkdownPreview) setEditorMounted(true);
@@ -811,6 +884,18 @@ const CellComponent: React.FC<Props> = ({
           </pre>
         )}
       </div>
+      </div>
+      {sourceCollapsed && (
+        <div
+          data-testid={`source-resize-handle-${cell.id}`}
+          onMouseDown={handleSourceResizeStart}
+          onClick={(e) => e.stopPropagation()}
+          title="Drag to resize the collapsed code area"
+          className={`h-3 flex items-center justify-center cursor-ns-resize border-b border-slate-200 transition-colors ${isSourceResizing ? 'bg-blue-100' : 'bg-slate-50 hover:bg-slate-100'}`}
+        >
+          <div className="w-8 h-0.5 rounded-full bg-slate-300" />
+        </div>
+      )}
 
       {/* Output Area - show if has outputs, is executing, or has execution time */}
       {(cell.outputs.length > 0 || cell.isExecuting || cell.lastExecutionMs !== undefined) && (

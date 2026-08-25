@@ -92,6 +92,8 @@ export interface NebulaCell {
   executionCount: number | null;
   scrolled?: boolean;
   scrolledHeight?: number;
+  sourceCollapsed?: boolean;
+  sourceHeight?: number;
   _metadata?: Record<string, unknown>; // preserved unknown metadata
 }
 

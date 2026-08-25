@@ -44,6 +44,17 @@ export const CELL_METADATA_SCHEMA = {
     description: 'Height in pixels when output is collapsed.',
     agentMutable: true,
   },
+  sourceCollapsed: {
+    type: 'boolean',
+    description: 'Whether the cell SOURCE is collapsed to a fixed, scrollable height.',
+    agentMutable: true,
+    default: false,
+  },
+  sourceHeight: {
+    type: 'number',
+    description: 'Height in pixels when the cell source is collapsed.',
+    agentMutable: true,
+  },
 } as const satisfies Record<string, MetadataFieldSchema>;
 
 export type CellMetadataKey = keyof typeof CELL_METADATA_SCHEMA;

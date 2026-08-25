@@ -683,6 +683,22 @@ export class UndoRedoManager {
     this.updateMetadata(cellId, { scrolledHeight: { old: oldHeight, new: height } });
   }
 
+  setCellSourceCollapsed(cellId: string, collapsed: boolean): void {
+    const cell = this.cells.find(c => c.id === cellId);
+    if (!cell) return;
+    const oldCollapsed = cell.sourceCollapsed ?? false;
+    if (oldCollapsed === collapsed) return;
+    this.updateMetadata(cellId, { sourceCollapsed: { old: oldCollapsed, new: collapsed } });
+  }
+
+  setCellSourceHeight(cellId: string, height: number): void {
+    const cell = this.cells.find(c => c.id === cellId);
+    if (!cell) return;
+    const oldHeight = cell.sourceHeight;
+    if (oldHeight === height) return;
+    this.updateMetadata(cellId, { sourceHeight: { old: oldHeight, new: height } });
+  }
+
   // -------------------------------------------------------------------------
   // Undo/Redo
   // -------------------------------------------------------------------------

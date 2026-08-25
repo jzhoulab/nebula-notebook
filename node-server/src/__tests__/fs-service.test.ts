@@ -533,6 +533,27 @@ describe('FilesystemService', () => {
       } catch {}
     });
 
+    it('round-trips source collapse metadata (source_collapsed / source_height)', async () => {
+      // Long code cells collapse to a fixed, adjustable height like outputs
+      // do; the state belongs in the .ipynb so it survives reloads and is
+      // legible to other tools.
+      const file = path.join(testDir, 'save-cells.ipynb');
+      await service.saveNotebookCells(file, [
+        { ...cells[0], sourceCollapsed: true, sourceHeight: 240 },
+        cells[1],
+      ]);
+      const saved = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      expect(saved.cells[0].metadata.source_collapsed).toBe(true);
+      expect(saved.cells[0].metadata.source_height).toBe(240);
+      // absent (never collapsed) stays absent — no metadata churn in diffs
+      expect(saved.cells[1].metadata.source_collapsed).toBeUndefined();
+
+      const loaded = await service.getNotebookCells(file);
+      expect(loaded.cells[0].sourceCollapsed).toBe(true);
+      expect(loaded.cells[0].sourceHeight).toBe(240);
+      expect(loaded.cells[1].sourceCollapsed).toBeUndefined();
+    });
+
     it('should save cells to notebook format', async () => {
       await service.saveNotebookCells(path.join(testDir, 'save-cells.ipynb'), cells, 'python3');
       const saved = JSON.parse(fs.readFileSync(path.join(testDir, 'save-cells.ipynb'), 'utf-8'));

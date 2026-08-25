@@ -365,6 +365,9 @@ mismatch). Do NOT remove `height: auto !important` from `.cm-scroller` (causes t
 Cell metadata is preserved across load/save:
 - `nebula_id`: Internal cell ID for history tracking
 - `scrolled`: Jupyter-standard collapsed output state
+- `source_collapsed` / `source_height`: cell SOURCE collapsed to a fixed,
+  drag-adjustable height (same idiom as output collapse; toggle in the cell
+  toolbar, appears once the source is taller than the threshold)
 - `_metadata`: Unknown metadata from external tools preserved
 
 ## Test Locations

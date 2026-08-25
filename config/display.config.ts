@@ -40,6 +40,15 @@ export const OUTPUT_DEFAULT_HEIGHT_PX = 200;
 /** Maximum height for collapsed output (pixels) */
 export const OUTPUT_MAX_HEIGHT_PX = 600;
 
+/** Minimum height for collapsed cell source (pixels) */
+export const SOURCE_MIN_HEIGHT_PX = 60;
+
+/** Default height for collapsed cell source (pixels) */
+export const SOURCE_DEFAULT_HEIGHT_PX = 220;
+
+/** Source taller than this offers the collapse control (pixels) */
+export const SOURCE_COLLAPSE_THRESHOLD_PX = 320;
+
 // =============================================================================
 // Animation Durations
 // =============================================================================

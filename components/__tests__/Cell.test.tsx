@@ -460,3 +460,71 @@ describe('sticky cell toolbar (long-cell ergonomics)', () => {
     }
   });
 });
+
+describe('source collapse (fixed adjustable height for long code)', () => {
+  const longCell = {
+    id: 'src-1', type: 'code' as const,
+    content: Array.from({ length: 200 }, (_, i) => `x_${i} = ${i}`).join('\n'),
+    outputs: [], isExecuting: false,
+  };
+  const props = (over: Record<string, unknown> = {}) => ({
+    cell: longCell, index: 0, isActive: false,
+    allCellsRef: { current: [longCell] },
+    cellIndexMapRef: { current: new Map([[longCell.id, 0]]) },
+    onUpdate: vi.fn(), onRun: vi.fn(), onRunAndAdvance: vi.fn(), onDelete: vi.fn(),
+    onMove: vi.fn(), onChangeType: vi.fn(), onClick: vi.fn(), onAddCell: vi.fn(),
+    onActivate: vi.fn(), onNavigateCell: vi.fn(),
+    onSetCellSourceCollapsed: vi.fn(), onSetCellSourceHeight: vi.fn(),
+    ...over,
+  });
+
+  it('a collapsed cell renders a fixed-height scroll area at its persisted height', () => {
+    renderCell(props({ cell: { ...longCell, sourceCollapsed: true, sourceHeight: 260 } }) as any);
+    const area = screen.getByTestId('source-area-src-1');
+    expect(area.style.height).toBe('260px');
+    expect(area.className).toContain('overflow-y-auto');
+  });
+
+  it('an expanded cell has no height cap at all', () => {
+    renderCell(props() as any);
+    const area = screen.getByTestId('source-area-src-1');
+    expect(area.style.height).toBe('');
+    expect(area.className).not.toContain('overflow-y-auto');
+  });
+
+  it('the toolbar toggle reports the new collapsed state to the notebook', () => {
+    const onSetCellSourceCollapsed = vi.fn();
+    renderCell(props({ cell: { ...longCell, sourceCollapsed: true }, onSetCellSourceCollapsed }) as any);
+    fireEvent.click(screen.getByTestId('source-collapse-src-1'));
+    expect(onSetCellSourceCollapsed).toHaveBeenCalledWith('src-1', false);
+  });
+
+  it('dragging the handle resizes live and persists ONCE, at drag end', () => {
+    const onSetCellSourceHeight = vi.fn();
+    renderCell(props({ cell: { ...longCell, sourceCollapsed: true, sourceHeight: 200 }, onSetCellSourceHeight }) as any);
+    const handle = screen.getByTestId('source-resize-handle-src-1');
+
+    fireEvent.mouseDown(handle, { clientY: 100 });
+    fireEvent.mouseMove(document, { clientY: 160 });
+    expect(screen.getByTestId('source-area-src-1').style.height).toBe('260px'); // live
+    expect(onSetCellSourceHeight).not.toHaveBeenCalled();                        // not yet
+    fireEvent.mouseUp(document, { clientY: 160 });
+    expect(onSetCellSourceHeight).toHaveBeenCalledTimes(1);
+    expect(onSetCellSourceHeight).toHaveBeenCalledWith('src-1', 260);
+  });
+
+  it('never collapses below the minimum height', () => {
+    const onSetCellSourceHeight = vi.fn();
+    renderCell(props({ cell: { ...longCell, sourceCollapsed: true, sourceHeight: 100 }, onSetCellSourceHeight }) as any);
+    fireEvent.mouseDown(screen.getByTestId('source-resize-handle-src-1'), { clientY: 300 });
+    fireEvent.mouseMove(document, { clientY: 0 }); // drag far up
+    fireEvent.mouseUp(document, { clientY: 0 });
+    expect(onSetCellSourceHeight).toHaveBeenCalledWith('src-1', 60); // SOURCE_MIN_HEIGHT_PX
+  });
+
+  it('a collapsed cell always offers the expand control, even if it measures short', () => {
+    renderCell(props({ cell: { id: 'short-1', type: 'code', content: 'x=1', outputs: [], isExecuting: false, sourceCollapsed: true },
+      allCellsRef: { current: [] }, cellIndexMapRef: { current: new Map([['short-1', 0]]) } }) as any);
+    expect(screen.getByTestId('source-collapse-short-1')).toBeInTheDocument();
+  });
+});

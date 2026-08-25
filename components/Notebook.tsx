@@ -602,6 +602,8 @@ export const Notebook: React.FC = () => {
     changeType,
     setCellScrolled,
     setCellScrolledHeight,
+    setCellSourceCollapsed,
+    setCellSourceHeight,
     batch,
     saveCheckpoint,
     flushCell,
@@ -5493,6 +5495,8 @@ export const Notebook: React.FC = () => {
                   onSave={handleManualSave}
                   onSetCellScrolled={setCellScrolled}
                   onSetCellScrolledHeight={setCellScrolledHeight}
+                  onSetCellSourceCollapsed={setCellSourceCollapsed}
+                  onSetCellSourceHeight={setCellSourceHeight}
                   onCursorActivity={recordCursorAnchor}
                   searchHighlight={
                     // Only pass search to the cell containing the current match.
