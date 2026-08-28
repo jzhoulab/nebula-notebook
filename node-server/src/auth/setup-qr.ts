@@ -12,6 +12,18 @@ import * as qrcode from 'qrcode-terminal';
 
 export type QrMode = 'small' | 'big';
 
+/**
+ * The otpauth account label. Every install used to render the same
+ * "NebulaNotebook: local" entry, so a user running Nebula in two places got
+ * two indistinguishable authenticator entries — and no way to tell which
+ * 6-digit code belongs to which server. Host:port makes them self-labeling.
+ * Colons are separators in the otpauth label grammar, so they are replaced.
+ */
+export function accountLabel(host: string, port: number | string): string {
+  const clean = (host || '').trim().replace(/:/g, '-') || 'local';
+  return `${clean}:${port}`;
+}
+
 export function renderQr(otpAuthUrl: string, mode: QrMode): string {
   let out = '';
   // qrcode-terminal invokes the callback synchronously.

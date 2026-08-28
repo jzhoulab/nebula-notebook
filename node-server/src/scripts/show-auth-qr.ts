@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { authenticator } from 'otplib';
-import { buildSetupInstructions, renderQr, type QrMode } from '../auth/setup-qr';
+import { accountLabel, buildSetupInstructions, renderQr, type QrMode } from '../auth/setup-qr';
 
 interface AuthConfigFile {
   totpSecret?: string;
@@ -11,7 +11,6 @@ interface AuthConfigFile {
 
 const AUTH_CONFIG_FILE = path.join(os.homedir(), '.nebula', 'auth.json');
 const ISSUER = 'NebulaNotebook';
-const ACCOUNT_NAME = 'local';
 
 function fail(message: string): never {
   console.error(message);
@@ -51,7 +50,7 @@ function main(): void {
     fail(`[Auth] Missing "totpSecret" in ${AUTH_CONFIG_FILE}`);
   }
 
-  const otpAuthUrl = authenticator.keyuri(ACCOUNT_NAME, ISSUER, secret);
+  const otpAuthUrl = authenticator.keyuri(accountLabel(os.hostname(), process.env.PORT || 3000), ISSUER, secret);
 
   if (args.includes('--url')) {
     console.log(otpAuthUrl);

@@ -12,7 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { authenticator } from 'otplib';
 import * as jwt from 'jsonwebtoken';
-import { buildSetupInstructions, renderQr } from './setup-qr';
+import { accountLabel, buildSetupInstructions, renderQr } from './setup-qr';
 
 // Config file location (env override is a test seam)
 const NEBULA_DIR = process.env.NEBULA_AUTH_DIR || path.join(os.homedir(), '.nebula');
@@ -181,7 +181,8 @@ class AuthService {
     }
 
     const issuer = 'NebulaNotebook';
-    const accountName = 'local';
+    // host:port so several Nebula installs are distinguishable in the app.
+    const accountName = accountLabel(os.hostname(), process.env.PORT || process.env.NODE_SERVER_PORT || 3000);
     const otpAuthUrl = authenticator.keyuri(accountName, issuer, this.config.totpSecret);
     console.log(buildSetupInstructions(this.config.totpSecret, otpAuthUrl, renderQr(otpAuthUrl, 'small')));
   }
