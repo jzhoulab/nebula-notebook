@@ -283,6 +283,23 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
     }
   };
 
+  // ARM setup fetch. MUST live above the early return below: every hook has to
+  // run on every render, and a hook after `if (!isOpen) return null` runs only
+  // while the modal is open — which crashes on open with React #310
+  // ("Rendered more hooks than during the previous render"). Derives its own
+  // inputs from state rather than from values computed further down.
+  const selectedIsArm = Boolean((() => {
+    const p = data?.load?.partitions.find((x) => x.name === partition);
+    return p?.archs?.length && p.archs.every((a) => a !== 'x86_64');
+  })());
+
+  useEffect(() => {
+    if (!isOpen || !selectedIsArm || armSetup !== null) return;
+    let cancelled = false;
+    getArmSetup().then((info) => { if (!cancelled && info) setArmSetup(info); });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedIsArm, armSetup]);
+
   if (!isOpen) return null;
 
   const associations = data?.associations;
@@ -310,14 +327,6 @@ export default function ComputeAllocationModal({ isOpen, onClose, onChanged, onU
   const selectedLoad = loadByName.get(partition);
   // Only the GPU model(s) that actually exist in the selected queue.
   const partitionGpuTypes = selectedLoad?.gpus?.map((g) => g.type) ?? [];
-  const selectedIsArm = Boolean(selectedLoad?.archs?.length && selectedLoad.archs.every((a) => a !== 'x86_64'));
-
-  useEffect(() => {
-    if (!selectedIsArm || armSetup !== null) return;
-    let cancelled = false;
-    getArmSetup().then((info) => { if (!cancelled && info) setArmSetup(info); });
-    return () => { cancelled = true; };
-  }, [selectedIsArm, armSetup]);
   const selectedFit = selectedLoad ? partitionFit(selectedLoad, req) : null;
   const betterExists = recommended && recommended.name !== partition &&
     (!selectedFit || recommended.fit.score > selectedFit.score + 1);

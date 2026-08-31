@@ -114,6 +114,29 @@ describe('ComputeAllocationModal number inputs', () => {
   });
 });
 
+describe('hook order across open/close (React #310 regression)', () => {
+  // Every hook must run on EVERY render. The modal early-returns null when
+  // closed, so a hook placed below that return runs only while open — and
+  // opening the modal then crashes with "Rendered more hooks than during the
+  // previous render" (2026-08-31 report: crash when requesting an allocation).
+  beforeEach(() => {
+    vi.mocked(getComputePartitions).mockResolvedValue(partitionsFixture);
+    vi.mocked(getPartitionQos).mockResolvedValue(null as any);
+    vi.mocked(listAllocations).mockResolvedValue([]);
+    vi.mocked(getArmSetup).mockResolvedValue({ configured: true, prompt: '' });
+  });
+
+  it('mounts closed, then opens without a hook-order error', async () => {
+    const view = render(<ComputeAllocationModal isOpen={false} onClose={() => {}} />);
+    view.rerender(<ComputeAllocationModal isOpen={true} onClose={() => {}} />);
+    // The form renders: no throw, and the partition control is present.
+    expect(await screen.findByLabelText(/Partition/i)).toBeInTheDocument();
+    // …and closing again is equally safe.
+    view.rerender(<ComputeAllocationModal isOpen={false} onClose={() => {}} />);
+    expect(screen.queryByLabelText(/Partition/i)).toBeNull();
+  });
+});
+
 describe('ARM partition setup affordance', () => {
   // aarch64 queues without a configured ARM runtime: the modal says so and
   // hands over an agent-executable setup prompt — instead of letting the
