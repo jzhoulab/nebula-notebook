@@ -376,6 +376,22 @@ Cell metadata is preserved across load/save:
 - Backend: `node-server/src/__tests__/`
 - Framework: Vitest
 
+## Static Guards in the Test Suite
+
+The project has no ESLint (and no editor in the loop), so rules that a linter
+would normally enforce run as tests instead — they execute in CI like any
+other test:
+
+- **Hooks after an early return** (`lib/hookOrderCheck.ts` +
+  `lib/__tests__/hookOrderCheck.test.ts`): a hook below `if (…) return …`
+  runs only on some renders, which React rejects with #310 ("Rendered more
+  hooks than during the previous render") — it shipped once and crashed the
+  compute allocation modal on open. The guard parses every file under
+  `components/`, `hooks/`, `services/`, `lib/` with the TypeScript compiler
+  API and fails with `file:line hook() runs after the early return on line N`.
+
+Add new guards here when a class of bug can be detected statically.
+
 ## TDD Workflow (Required)
 
 1. Write failing tests first
