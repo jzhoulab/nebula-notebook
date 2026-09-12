@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Folder, Palette, Bell, Volume2, AlignLeft, Hash, Settings, Cpu, MousePointerClick, Keyboard, Sparkles, Laptop, Server, Play, Stethoscope, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { X, Folder, Palette, Bell, Volume2, AlignLeft, Hash, Settings, Cpu, MousePointerClick, Keyboard, Sparkles, Laptop, Server, Play, Stethoscope, CheckCircle2, XCircle, Loader2, ShieldCheck } from 'lucide-react';
 import {
   getSettings,
   saveSettings,
@@ -13,6 +13,7 @@ import { getRootDirectory, setRootDirectory } from '../services/fileService';
 import { notifySettingsChanged, fetchServerBackends, probeRemoteBins, runDiagnostics, testCompletion, type Diagnostics } from '../services/aiAutocompleteService';
 import { fetchEnvironment, serverIsRemote, environmentLabel, environmentNeedsUserChoice, type EnvironmentInfo } from '../services/environmentService';
 import { RemoteAgentSetupModal } from './RemoteAgentSetupModal';
+import { SecuritySettings } from './SecuritySettings';
 import { checkReverseTunnel } from '../services/terminalService';
 import { useNotification } from './NotificationSystem';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -25,7 +26,7 @@ interface Props {
   isLoginNode?: boolean;
 }
 
-type SettingsTab = 'general' | 'ai' | 'appearance' | 'notifications';
+type SettingsTab = 'general' | 'ai' | 'appearance' | 'notifications' | 'security';
 
 export const SettingsModal: React.FC<Props> = (props) => {
   // Mount the panel only while open so useModalA11y attaches/cleans up per open.
@@ -189,6 +190,7 @@ const SettingsModalContent: React.FC<Props> = ({ isOpen, onClose, onRefresh, isL
     { id: 'ai', label: 'AI', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'appearance', label: 'Appearance', icon: <Palette className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
+    { id: 'security', label: 'Security', icon: <ShieldCheck className="w-4 h-4" /> },
   ];
 
   return (
@@ -961,6 +963,9 @@ const SettingsModalContent: React.FC<Props> = ({ isOpen, onClose, onRefresh, isL
                 </div>
               </>
             )}
+
+            {/* Security Tab — passkeys (WebAuthn) for this server */}
+            {activeTab === 'security' && <SecuritySettings />}
           </div>
 
           {/* Footer */}
