@@ -13,7 +13,41 @@ The Nebula Notebook backend provides REST APIs for:
 
 ## Authentication
 
-Currently no authentication required (designed for local development).
+Every `/api/*` route except the ones listed as public below requires a session token, sent as
+`Authorization: Bearer <token>` (or `?token=` on WebSocket upgrades). Tokens are JWTs issued by
+the login routes; the default session is 30 days, or 24 hours when the client sends `trusted: false`.
+Run the server with `--noauth` / `NO_AUTH=true` to disable authentication for local development.
+
+### TOTP
+
+```
+GET  /api/auth/status                       (public)  → { configured, authenticated }
+POST /api/auth/verify                       (public)  { code, trusted? | trustBrowser? } → { success, token } | 401 { success:false, error }
+```
+
+`trusted` (alias `trustBrowser`) defaults to `true` (30-day session); only an explicit `false` yields the 24 h one.
+Rate limit: 5 failed attempts per 30 s, shared with passkey login.
+
+### Passkeys (WebAuthn)
+
+The rpID is the hostname of the request's `Host` (or `X-Forwarded-Host`) with the port stripped; the
+origin is `${proto}://${host}` where `proto` honors `X-Forwarded-Proto` and otherwise defaults to `https`,
+or `http` for `localhost`. An IP-literal host is rejected with `400 { ok:false, code:"invalid_rp_id", error }`
+telling the user to open `http://localhost:PORT` instead.
+
+```
+POST   /api/auth/passkeys/login-options     (public)  → { ok:true, token, options } | { ok:false, error }   (none enrolled for this rpID)
+POST   /api/auth/passkeys/login             (public, rate-limited)  { token, response } → { success, token } | 401 { success:false, error }
+POST   /api/auth/passkeys/register-options  (auth)    → { ok:true, token, options }
+POST   /api/auth/passkeys/register          (auth)    { token, response, label? } → { ok:true, passkey } | 400 { ok:false, error }
+GET    /api/auth/passkeys                   (auth)    → { ok:true, rpID, rpError, passkeys:[{ id, rpID, label, createdAt, lastUsedAt }] }
+DELETE /api/auth/passkeys/:id               (auth)    → { ok:true, removed:1 } | 404
+```
+
+`token` is an opaque challenge handle: in-memory, single-use, 120 s TTL, typed (login vs register) and
+bound to the rpID it was issued for. `response` is the JSON produced by `@simplewebauthn/browser`'s
+`startAuthentication` / `startRegistration`. A passkey login issues the same 30-day session token as
+TOTP, in the same response shape. Public keys are never returned by the list route.
 
 ## Error Responses
 

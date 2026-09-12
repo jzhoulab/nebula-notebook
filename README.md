@@ -217,13 +217,28 @@ npm run mcp
 
 ## Authentication
 
-Nebula uses TOTP-based two-factor authentication:
+Nebula uses TOTP-based two-factor authentication, with passkeys as an optional faster way in:
 
 1. **First Start**: QR code printed to terminal - scan with authenticator app
-2. **Login**: Enter 6-digit code in browser
-3. **Trust Browser**: Check option for 30-day sessions
+2. **Login**: Enter 6-digit code in browser (or use a passkey once you have enrolled one)
+3. **Session**: 30 days by default ("Keep me signed in on this device" is pre-checked); untick it for a 24-hour session
 
 Config stored in `~/.nebula/auth.json`. Multiple servers sharing the same home directory share the same 2FA.
+
+### Passkeys / biometrics
+
+After signing in with a code once, open **Settings → Security → Add this device** to enroll a passkey
+(Touch ID, Face ID, Windows Hello, or a security key). The login screen then offers **Sign in with
+passkey**; the code stays available as the fallback. Passkey logins always get the 30-day session.
+
+- Passkeys are stored in `~/.nebula/passkeys.json` (mode 0600, public keys only — nothing secret).
+- A passkey is bound to the **hostname** you enroll it at (the WebAuthn rpID). Through an ssh tunnel that is
+  `localhost`, so a passkey enrolled from one laptop's tunnel works from another laptop's tunnel to the same
+  server when the platform syncs it (iCloud Keychain, Google Password Manager). A passkey enrolled at a
+  domain name is only offered at that domain.
+- Open Nebula as **`http://localhost:PORT`, not `http://127.0.0.1:PORT`** — WebAuthn does not allow an IP
+  address as the rpID, and the server refuses to enroll or offer passkeys there (with that hint).
+  `localhost` counts as a secure context, so no TLS is needed for the tunnel case.
 
 To print the QR code again later (for re-enroll/recovery), run:
 

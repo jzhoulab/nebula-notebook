@@ -59,17 +59,18 @@ cd node-server && npm test     # Run backend tests
 - `components/AIChatSidebar.tsx` - AI assistant: full notebook context, multi-message history, image support
 
 **Utilities & Dialogs:**
-- `components/SettingsModal.tsx` - Settings: General, AI, Appearance, Notifications tabs
+- `components/SettingsModal.tsx` - Settings: General, AI, Appearance, Notifications, Security (passkeys) tabs
 - `components/KernelManager.tsx` - Kernel management: list sessions, memory usage, interrupt/restart
 - `components/HistoryPanel.tsx` - Notebook history: timeline view, preview, restore to any point
 - `components/NotebookSearch.tsx` - Find & replace: regex, case-sensitive, navigate matches
-- `components/AuthGate.tsx` / `TOTPLogin.tsx` - 2FA authentication
+- `components/AuthGate.tsx` / `TOTPLogin.tsx` / `SecuritySettings.tsx` - 2FA + passkey authentication
 
 **Services:**
 - `services/kernelService.ts` - Multi-session kernel management, WebSocket streaming, code completion
 - `services/fileService.ts` - Filesystem operations, notebook I/O, history/session persistence
 - `services/llmService.ts` - Multi-provider LLM client (Google, OpenAI, Anthropic)
 - `services/authService.ts` - JWT token management for 2FA
+- `services/passkeyService.ts` - WebAuthn login/enrollment client (`@simplewebauthn/browser`)
 - `services/terminalService.ts` - Terminal session management
 - `services/clusterService.ts` - Multi-server clustering support
 
@@ -90,7 +91,7 @@ cd node-server && npm test     # Run backend tests
 - `node-server/src/index.ts` - Express server, WebSocket setup, auth initialization
 
 **Routes:**
-- `routes/auth.ts` - 2FA authentication endpoints
+- `routes/auth.ts` - 2FA + passkey authentication endpoints
 - `routes/kernel.ts` - Kernel session management and WebSocket
 - `routes/notebook.ts` - Notebook cells, history, session, agent permissions
 - `routes/fs.ts` - Filesystem operations (list, read, write, rename, delete, upload, download)
@@ -104,6 +105,7 @@ cd node-server && npm test     # Run backend tests
 - `fs/fs-service.ts` - Filesystem operations, notebook I/O, metadata preservation
 - `llm/llm-service.ts` - Multi-provider LLM abstraction
 - `auth/auth-service.ts` - TOTP 2FA and JWT management
+- `auth/passkeys.ts` - WebAuthn store (`~/.nebula/passkeys.json`), challenges, rpID/origin derivation
 - `auth/auth-middleware.ts` - Route and WebSocket authentication
 - `terminal/pty-manager.ts` - PTY session management
 - `discovery/discovery-service.ts` - Python environment discovery
@@ -112,7 +114,9 @@ cd node-server && npm test     # Run backend tests
 
 **Authentication** (unprotected)
 - `GET /api/auth/status` - Check 2FA config and auth status
-- `POST /api/auth/verify` - Verify TOTP code, get JWT token
+- `POST /api/auth/verify` - Verify TOTP code, get JWT token (30-day default; `trusted:false` → 24 h)
+- `POST /api/auth/passkeys/login-options`, `POST /api/auth/passkeys/login` - Passkey (WebAuthn) login
+- `POST /api/auth/passkeys/register-options`, `POST /api/auth/passkeys/register`, `GET /api/auth/passkeys`, `DELETE /api/auth/passkeys/:id` - Passkey management (protected)
 
 **Kernels** (protected)
 - `GET /api/kernels` - List available kernelspecs
@@ -195,8 +199,10 @@ Nebula uses TOTP-based two-factor authentication:
 
 1. **First Start**: Server prints QR code to terminal. Scan with authenticator app.
 2. **Login**: Enter 6-digit code in the UI
-3. **Trust Browser**: Check "Trust this browser" for 30-day sessions (vs 24 hours)
-4. **Rate Limiting**: 5 attempts per 30 seconds
+3. **Session**: 30 days by default; untick "Keep me signed in on this device" for 24 hours
+4. **Rate Limiting**: 5 attempts per 30 seconds (shared by TOTP and passkey login)
+5. **Passkeys**: Settings → Security → Add this device; login screen offers "Sign in with passkey".
+   rpID = request hostname (use `http://localhost:PORT`, never `127.0.0.1`); stored in `~/.nebula/passkeys.json`.
 
 Config file: `~/.nebula/auth.json` contains the TOTP secret.
 
