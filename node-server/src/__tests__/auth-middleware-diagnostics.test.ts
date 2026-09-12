@@ -29,7 +29,19 @@ vi.mock('../cluster/cluster-secret', () => ({ readClusterSecret: () => null }));
 // absent, so the diagnostic must talk about the PEER, not the file.
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
-  return { ...actual, existsSync: (p: unknown) => (String(p).endsWith('session-token') ? false : actual.existsSync(p as string)) };
+  const isSessionTokenPath = (p: unknown) => String(p).endsWith('session-token');
+  return {
+    ...actual,
+    existsSync: (p: unknown) => (isSessionTokenPath(p) ? false : actual.existsSync(p as string)),
+    // A request that authenticates with a real token makes the middleware
+    // persist it via a module-internal call. Without this interception the
+    // suite overwrote the user's real ~/.nebula/session-token with the
+    // literal fixture token on every run (observed 2026-09-12).
+    writeFileSync: ((p: unknown, data: unknown, opts?: unknown) => {
+      if (isSessionTokenPath(p)) return;
+      return actual.writeFileSync(p as string, data as string, opts as any);
+    }) as typeof actual.writeFileSync,
+  };
 });
 
 import { authMiddleware } from '../auth/auth-middleware';
