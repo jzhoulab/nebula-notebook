@@ -13,15 +13,19 @@ import * as os from 'os';
 import { authenticator } from 'otplib';
 import * as jwt from 'jsonwebtoken';
 import { accountLabel, buildSetupInstructions, renderQr } from './setup-qr';
+import { resolveNebulaDir } from './nebula-dir';
 
-// Config file location (env override is a test seam)
-const NEBULA_DIR = process.env.NEBULA_AUTH_DIR || path.join(os.homedir(), '.nebula');
+// Config file location (NEBULA_AUTH_DIR relocates ~/.nebula — see nebula-dir.ts)
+const NEBULA_DIR = resolveNebulaDir();
 const AUTH_CONFIG_FILE = path.join(NEBULA_DIR, 'auth.json');
 
 // JWT settings
 const JWT_SECRET_LENGTH = 64;
-const SHORT_SESSION_HOURS = 24;
-const LONG_SESSION_DAYS = 30;
+// The default session is the long one: Nebula is reached through a personal
+// ssh tunnel on a personal laptop, and a daily re-login buys nothing there.
+// A client that explicitly sends `trusted: false` still gets the short one.
+export const SHORT_SESSION_HOURS = 24;
+export const LONG_SESSION_DAYS = 30;
 
 export interface AuthConfig {
   totpSecret: string;
@@ -47,7 +51,15 @@ export interface VerifyResult {
   error?: string;
 }
 
-// Rate limiting: max 5 attempts per 30 seconds
+export interface RateLimitCheck {
+  allowed: boolean;
+  /** Seconds until the oldest failure ages out (0 when allowed). */
+  waitSeconds: number;
+}
+
+// Rate limiting: max 5 failed attempts per 30 seconds. One shared bucket for
+// every credential path (TOTP and passkey) — a brute-forcer must not get a
+// fresh allowance by switching endpoints.
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 30000;
 // DELIBERATELY wide (±5 steps = ±2.5min): cluster login nodes have shipped
@@ -198,21 +210,43 @@ class AuthService {
   }
 
   /**
-   * Verify a TOTP code and issue a JWT token
+   * Rate-limit check shared by every login path. Drops failures older than
+   * the window, then reports whether another attempt may proceed.
    */
-  verifyCode(code: string, trustBrowser: boolean = false): VerifyResult {
+  checkRateLimit(): RateLimitCheck {
+    const now = Date.now();
+    this.failedAttempts = this.failedAttempts.filter(t => now - t < WINDOW_MS);
+    if (this.failedAttempts.length >= MAX_ATTEMPTS) {
+      const oldestAttempt = this.failedAttempts[0];
+      return { allowed: false, waitSeconds: Math.ceil((WINDOW_MS - (now - oldestAttempt)) / 1000) };
+    }
+    return { allowed: true, waitSeconds: 0 };
+  }
+
+  /** Record a failed login attempt; returns attempts left in this window. */
+  recordFailedAttempt(): number {
+    this.failedAttempts.push(Date.now());
+    return Math.max(0, MAX_ATTEMPTS - this.failedAttempts.length);
+  }
+
+  /** A successful login clears the failure bucket. */
+  clearFailedAttempts(): void {
+    this.failedAttempts = [];
+  }
+
+  /**
+   * Verify a TOTP code and issue a JWT token.
+   * `trustBrowser` defaults to the long (30-day) session; pass `false`
+   * explicitly for the 24 h one.
+   */
+  verifyCode(code: string, trustBrowser: boolean = true): VerifyResult {
     if (!this.config) {
       return { success: false, error: 'Auth not initialized' };
     }
 
-    // Rate limiting: clean old attempts and check
-    const now = Date.now();
-    this.failedAttempts = this.failedAttempts.filter(t => now - t < WINDOW_MS);
-
-    if (this.failedAttempts.length >= MAX_ATTEMPTS) {
-      const oldestAttempt = this.failedAttempts[0];
-      const waitSeconds = Math.ceil((WINDOW_MS - (now - oldestAttempt)) / 1000);
-      return { success: false, error: `Too many attempts. Try again in ${waitSeconds}s` };
+    const limit = this.checkRateLimit();
+    if (!limit.allowed) {
+      return { success: false, error: `Too many attempts. Try again in ${limit.waitSeconds}s` };
     }
 
     // Verify TOTP code
@@ -222,13 +256,11 @@ class AuthService {
     });
 
     if (!isValid) {
-      this.failedAttempts.push(now);
-      const remaining = MAX_ATTEMPTS - this.failedAttempts.length;
+      const remaining = this.recordFailedAttempt();
       return { success: false, error: `Invalid code. ${remaining} attempts remaining` };
     }
 
-    // Success - clear failed attempts
-    this.failedAttempts = [];
+    this.clearFailedAttempts();
 
     // Mark setup as complete on first successful verification
     if (!this.config.setupComplete) {
@@ -244,9 +276,10 @@ class AuthService {
   }
 
   /**
-   * Issue a new JWT token
+   * Issue a new session JWT. Public so every verified credential (TOTP code,
+   * passkey assertion) mints the identical token the middleware validates.
    */
-  private issueToken(trusted: boolean): string {
+  issueToken(trusted: boolean = true): string {
     if (!this.config) {
       throw new Error('Auth not initialized');
     }

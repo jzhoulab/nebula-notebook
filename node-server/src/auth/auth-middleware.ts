@@ -4,7 +4,9 @@
  * Public routes (no auth required):
  * - /api/health
  * - /api/ready
- * - /api/auth/*
+ * - /api/auth/status, /api/auth/verify
+ * - /api/auth/passkeys/login-options, /api/auth/passkeys/login
+ * Every other /api/auth/passkeys/* route (enroll, list, delete) needs a session.
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify';
@@ -52,6 +54,8 @@ const PUBLIC_ROUTES = [
   '/api/ready',
   '/api/auth/status',
   '/api/auth/verify',
+  '/api/auth/passkeys/login-options',
+  '/api/auth/passkeys/login',
 ];
 
 const CLUSTER_SECRET_HEADER = 'x-nebula-cluster-secret';
@@ -136,9 +140,10 @@ function isClusterRoute(pathname: string): boolean {
 }
 
 /**
- * Check if a path is a public route
+ * Check if a path is a public route (no session needed). Non-/api/ paths
+ * (the served UI) are public too.
  */
-function isPublicRoute(pathname: string): boolean {
+export function isPublicRoute(pathname: string): boolean {
   // Exact matches
   if (PUBLIC_ROUTES.includes(pathname)) {
     return true;

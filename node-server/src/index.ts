@@ -50,6 +50,7 @@ import { archOverridesFromEnv } from './scheduler/arch';
 
 // Import auth
 import { authService, authMiddleware, authWebSocketMiddleware } from './auth';
+import { isPublicRoute } from './auth/auth-middleware';
 import { fsService } from './fs/fs-service';
 import { getUpdateInfo, startUpdateChecker } from './update-check';
 import { getEnvironment } from './environment';
@@ -363,23 +364,17 @@ async function createApp(): Promise<FastifyInstance> {
     return reply.send({ status: 'ready' });
   });
 
-  // Auth routes (public - no auth required)
+  // Auth routes. Login endpoints are public; passkey management
+  // (enroll/list/delete) lives under the same prefix but needs a session.
   await fastify.register(authRoutes, { prefix: '/api' });
 
   // Auth middleware - protect all other API routes
-  // Applied as an onRequest hook for /api/* routes (excluding public ones)
+  // Applied as an onRequest hook for /api/* routes (excluding public ones).
+  // The public list (health, ready, TOTP + passkey login) and the non-API
+  // static paths are decided in one place: isPublicRoute().
   fastify.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
     const pathname = request.url.split('?')[0];
-    // Skip health, ready, and auth routes (they are public)
-    if (
-      pathname === '/api/health' ||
-      pathname === '/api/ready' ||
-      pathname.startsWith('/api/auth/')
-    ) {
-      return;
-    }
-    // Skip non-API routes (static files etc)
-    if (!pathname.startsWith('/api/')) {
+    if (isPublicRoute(pathname)) {
       return;
     }
     // Apply auth middleware
