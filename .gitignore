@@ -74,3 +74,6 @@ tmp/
 # `demo-assets` GitHub release; only small GIFs/posters belong in
 # docs/assets/demo/. See docs/DEMO-CAPTURE.md § Assets & reproducibility.
 docs/assets/demo/*.mp4
+
+# Generated product-film frames and mp4 (regenerate: scripts/demo-illustrate.py)
+build/film/
