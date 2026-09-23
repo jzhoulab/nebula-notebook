@@ -86,21 +86,23 @@ def kicker(label, y=362):
             f'letter-spacing="5.5">{esc(label)}</text>')
 
 
-def headline(white, accent, y=490):
-    """Two-tone headline: plain white, then the gradient phrase."""
-    size = 86
-    wpx = len(white) * size * 0.545
-    apx = len(accent) * size * 0.545
-    gap = size * 0.28 if white and accent else 0
-    x0 = W / 2 - (wpx + gap + apx) / 2
-    out = ""
+def headline(white, accent, y=490, size=86):
+    """Two-tone headline, laid out as ONE text run.
+
+    Measuring each phrase separately (len x size x ratio) and positioning them
+    by hand is wrong for a proportional face — the seam drifted, so some cards
+    showed a gaping hole between the white and gradient words. Tspans inside a
+    single centred <text> let the renderer do the spacing.
+    """
+    parts = ""
     if white:
-        out += (f'<text x="{x0}" y="{y}" font-size="{size}" font-weight="700" fill="#ffffff">'
-                f'{esc(white)}</text>')
+        parts += f'<tspan fill="#ffffff">{esc(white)}</tspan>'
+    if white and accent:
+        parts += '<tspan fill="#ffffff"> </tspan>'
     if accent:
-        out += (f'<text x="{x0 + wpx + gap}" y="{y}" font-size="{size}" font-weight="700" '
-                f'fill="url(#accent)">{esc(accent)}</text>')
-    return out
+        parts += f'<tspan fill="url(#accent)">{esc(accent)}</tspan>'
+    return (f'<text x="{W/2}" y="{y}" font-size="{size}" font-weight="700" '
+            f'text-anchor="middle" xml:space="preserve">{parts}</text>')
 
 
 def subtitle(text, y=768):
@@ -239,8 +241,9 @@ def end_card():
     g.append(f'<rect x="{W/2-372}" y="{y-58}" width="92" height="92" rx="24" fill="url(#orb)"/>')
     g.append(f'<rect x="{W/2-372}" y="{y-58}" width="92" height="92" rx="24" fill="none" '
              f'stroke="#60a5fa" stroke-opacity="0.55" stroke-width="2.5"/>')
-    g.append(f'<text x="{W/2-258}" y="{y+16}" font-size="76" font-weight="700" fill="url(#accent)">Nebula</text>')
-    g.append(f'<text x="{W/2+14}" y="{y+16}" font-size="76" font-weight="700" fill="#ffffff">Notebook</text>')
+    g.append(f'<text x="{W/2+56}" y="{y+16}" font-size="76" font-weight="700" text-anchor="middle" '
+             f'xml:space="preserve"><tspan fill="url(#accent)">Nebula</tspan>'
+             f'<tspan fill="#ffffff"> Notebook</tspan></text>')
     for i, cmd in enumerate(("npx nebula-notebook", "npx nebula-notebook-mcp setup-mcp")):
         cy = y + 96 + i * 92
         g.append(f'<rect x="{W/2-372}" y="{cy}" width="744" height="72" rx="16" fill="#101a2e" '
@@ -375,10 +378,11 @@ def intro_title():
     g.append(f'<circle cx="{W/2}" cy="{y-146}" r="46" fill="#38bdf8" opacity="0.28" filter="url(#soft)"/>')
     g.append(f'<circle cx="{W/2}" cy="{y-146}" r="34" fill="url(#orb)"/>')
     g.append(f'<circle cx="{W/2}" cy="{y-146}" r="39" fill="none" stroke="#60a5fa" stroke-opacity="0.5" stroke-width="2"/>')
-    g.append(f'<text x="{W/2-268}" y="{y}" font-size="82" font-weight="700" fill="url(#accent)">Nebula</text>')
-    g.append(f'<text x="{W/2+14}" y="{y}" font-size="82" font-weight="700" fill="#ffffff">Notebook</text>')
+    g.append(f'<text x="{W/2}" y="{y}" font-size="82" font-weight="700" text-anchor="middle" '
+             f'xml:space="preserve"><tspan fill="url(#accent)">Nebula</tspan>'
+             f'<tspan fill="#ffffff"> Notebook</tspan></text>')
     g.append(f'<text x="{W/2}" y="{y+72}" font-size="31" fill="{SUB}" text-anchor="middle">'
-             f'You and your coding agent, in the same cells.</text>')
+             f'The notebook is the interface between you and your AI.</text>')
     g.append("</svg>")
     return "".join(g)
 
@@ -582,6 +586,146 @@ def build_v12():
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", audio, "-c:v", "copy",
                     "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out],
                    check=True)
+    d = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "default=nw=1:nk=1", out], capture_output=True, text=True).stdout.strip()
+    print(f"{out}  ({float(d):.1f}s, {os.path.getsize(out)/1e6:.1f} MB)")
+    return out
+
+
+# ---------------------------------------------- v13: the actual positioning --
+# Review notes that reshaped this cut:
+#  · the CLI matters at least as much as MCP — lead with it, keep both
+#  · run-above/below and code folding are Jupyter parity; they don't sell
+#  · simultaneous editing is an edge case, not the headline
+#  · the point is that the NOTEBOOK is the human/AI interface: proper UI for
+#    code, text and figures, and real collaboration in one surface
+
+def d_surface(y=636):
+    """One surface holding the three things analysis is made of."""
+    g = []
+    panes = (("code", CYAN), ("text", LAV), ("figures", GREEN))
+    bw, gap = 250, 34
+    x0 = W / 2 - (bw * 3 + gap * 2) / 2
+    for i, (label, col) in enumerate(panes):
+        x = x0 + i * (bw + gap)
+        g.append(f'<rect x="{x}" y="{y-86}" width="{bw}" height="150" rx="14" fill="#121a2c" '
+                 f'stroke="{col}" stroke-opacity="0.45"/>')
+        if label == "code":
+            for r in range(4):
+                g.append(f'<rect x="{x+26}" y="{y-58+r*20}" width="{176 - (r%2)*54}" height="8" rx="4" '
+                         f'fill="#2c3a58"/>')
+        elif label == "text":
+            for r in range(4):
+                g.append(f'<rect x="{x+26}" y="{y-58+r*20}" width="{198 - (r%3)*30}" height="8" rx="4" '
+                         f'fill="#33415c" opacity="0.8"/>')
+        else:
+            random.seed(11)
+            for _ in range(26):
+                px = x + 30 + random.random() * (bw - 62)
+                py = y - 56 + random.random() * 78
+                g.append(f'<circle cx="{px:.0f}" cy="{py:.0f}" r="3" fill="{random.choice([CYAN, AMBER, PINK])}" '
+                         f'opacity="0.8"/>')
+            g.append(f'<path d="M{x+26} {y+30} H{x+bw-26}" stroke="#334155"/>')
+        g.append(f'<text x="{x+bw/2}" y="{y+52}" font-size="19" fill="{col}" '
+                 f'text-anchor="middle">{label}</text>')
+    return "".join(g)
+
+
+def intro_surface():
+    return (head() + kicker("THE SHARED SURFACE")
+            + headline("Not a chat window.", "A notebook.", y=486, size=78)
+            + d_surface()
+            + subtitle("Real UI for code, text and figures — where you and your agent both work", y=782)
+            + "</svg>")
+
+
+def d_drive(y=648):
+    """CLI first, MCP alongside — and the clients people already run."""
+    g = []
+    g.append(f'<rect x="{W/2-470}" y="{y-92}" width="420" height="104" rx="14" fill="#0b1220" '
+             f'stroke="{GREEN}" stroke-opacity="0.45"/>')
+    g.append(f'<text x="{W/2-440}" y="{y-56}" font-size="22" fill="{GREEN}" '
+             f'font-family="{MONO}">$ nebula run nb.ipynb cell-7</text>')
+    g.append(f'<text x="{W/2-440}" y="{y-22}" font-size="22" fill="#94a3b8" '
+             f'font-family="{MONO}">  ✓ ok · 0.4s</text>')
+    g.append(f'<text x="{W/2-260}" y="{y+40}" font-size="19" fill="{GREEN}" '
+             f'text-anchor="middle">the nebula CLI</text>')
+    g.append(f'<rect x="{W/2+50}" y="{y-92}" width="420" height="104" rx="14" fill="#0b1220" '
+             f'stroke="{LAV}" stroke-opacity="0.4"/>')
+    g.append(f'<text x="{W/2+80}" y="{y-56}" font-size="22" fill="{LAV}" '
+             f'font-family="{MONO}">execute_cell(…)</text>')
+    g.append(f'<text x="{W/2+80}" y="{y-22}" font-size="22" fill="#94a3b8" '
+             f'font-family="{MONO}">  MCP tools</text>')
+    g.append(f'<text x="{W/2+260}" y="{y+40}" font-size="19" fill="{LAV}" '
+             f'text-anchor="middle">…or MCP, if that is your setup</text>')
+    names = (("Claude Code", CYAN), ("Codex", CYAN), ("Cursor", CYAN), ("any shell", MUTED))
+    widths = [len(n) * 12 + 44 for n, _ in names]
+    total = sum(widths) + 22 * (len(names) - 1)
+    x = W / 2 - total / 2
+    for (label, col), wd in zip(names, widths):
+        c, _ = chip(x, y + 62, label, col, w=wd, h=46, size=19)
+        g.append(c)
+        x += wd + 22
+    return "".join(g)
+
+
+def intro_drive():
+    return (head() + kicker("DRIVEN FROM ANYWHERE")
+            + headline("A CLI your agent", "already knows.", y=452, size=74)
+            + d_drive()
+            + "</svg>")
+
+
+def build_intro_v13():
+    return [("j1-title", intro_title(), 3.6),
+            ("j2-surface", intro_surface(), 4.4),
+            ("j3-drive", intro_drive(), 4.6)]
+
+
+def build_tail_v13():
+    """Feature pairs, minus the Jupyter-parity ones (runs above/below, folding)."""
+    cards = {slug.split("-", 1)[1]: svg for slug, svg in build_cards() if slug != "07-end"}
+    views = {slug.split("-", 1)[1]: (svg, cap) for slug, svg, cap in app_views()}
+    seq = []
+    for key in ["focus", "sealed", "keys", "arch"]:
+        seq.append((f"k-{key}", cards[key], 3.5))
+        seq.append((f"w-{key}", views[key][0], 3.5))
+    seq.append(("z-end", end_card(), 4.4))
+    return seq
+
+
+def build_v13():
+    """New opening + the untouched recording + trimmed feature pairs + close,
+    over an original synthesised score (scripts/demo-score.py)."""
+    OPENING_END = 11.0
+    intro_png, intro_hold = render_list(build_intro_v13(), "v13-")
+    tail_png, tail_hold = render_list(build_tail_v13(), "v13-")
+    intro_clip = os.path.join(OUT, "v13-intro.mp4")
+    tail_clip = os.path.join(OUT, "v13-tail.mp4")
+    d_in = clip_from(intro_png, intro_hold, intro_clip)
+    d_tl = clip_from(tail_png, tail_hold, tail_clip)
+    mid = os.path.join(OUT, "v13-mid.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(OPENING_END), "-i", OLD,
+                    "-t", str(SPLICE_AT - OPENING_END), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-crf", "18", "-an", mid], check=True)
+    lst = os.path.join(OUT, "v13.txt")
+    with open(lst, "w") as fh:
+        for f in (intro_clip, mid, tail_clip):
+            fh.write(f"file '{f}'\n")
+    video = os.path.join(OUT, "v13-video.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst,
+                    "-c", "copy", video], check=True)
+    total = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                  "-of", "default=nw=1:nk=1", video],
+                                 capture_output=True, text=True).stdout)
+    score_wav = os.path.join(OUT, "score.wav")
+    subprocess.run(["/usr/bin/python3",
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-score.py"),
+                    f"{total:.2f}", score_wav], check=True)
+    out = os.path.join(ROOT, "build", "film", "nebula-demo-v13.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", score_wav,
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest",
+                    "-movflags", "+faststart", out], check=True)
     d = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                         "-of", "default=nw=1:nk=1", out], capture_output=True, text=True).stdout.strip()
     print(f"{out}  ({float(d):.1f}s, {os.path.getsize(out)/1e6:.1f} MB)")
