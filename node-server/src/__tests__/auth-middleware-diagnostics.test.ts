@@ -25,14 +25,27 @@ vi.mock('../auth/auth-service', () => ({
 
 vi.mock('../cluster/cluster-secret', () => ({ readClusterSecret: () => null }));
 
-// No persisted session token on disk for these tests: the piggyback source is
-// absent, so the diagnostic must talk about the PEER, not the file.
+// Peer classification is stubbed: the parser itself is covered in
+// peer-identity.test.ts; here we assert the POLICY it drives.
+const peerState = vi.hoisted(() => ({ verdict: 'same-user' as string }));
+vi.mock('../auth/peer-identity', () => ({
+  classifyPeer: () => peerState.verdict,
+}));
+
+// Whether a session token exists on disk is per-test (diskState): some cases
+// need the piggyback source absent, the peer-identity cases need it present.
+const diskState = vi.hoisted(() => ({ sessionToken: null as string | null }));
 vi.mock('fs', async () => {
   const actual = await vi.importActual<typeof import('fs')>('fs');
   const isSessionTokenPath = (p: unknown) => String(p).endsWith('session-token');
   return {
     ...actual,
-    existsSync: (p: unknown) => (isSessionTokenPath(p) ? false : actual.existsSync(p as string)),
+    existsSync: (p: unknown) =>
+      isSessionTokenPath(p) ? diskState.sessionToken !== null : actual.existsSync(p as string),
+    readFileSync: ((p: unknown, ...rest: unknown[]) =>
+      isSessionTokenPath(p)
+        ? (diskState.sessionToken as string)
+        : (actual.readFileSync as (...a: unknown[]) => unknown)(p, ...rest)) as typeof actual.readFileSync,
     // A request that authenticates with a real token makes the middleware
     // persist it via a module-internal call. Without this interception the
     // suite overwrote the user's real ~/.nebula/session-token with the
@@ -68,6 +81,8 @@ describe('authMiddleware — token-less refusals explain themselves', () => {
     authState.setupComplete = true;
     authState.validTokens.clear();
     delete process.env.NEBULA_CLIENT_MODE;
+    peerState.verdict = 'same-user';
+    diskState.sessionToken = null;
   });
 
   it('non-loopback peer without a token: names the peer and the loopback rule', async () => {
@@ -112,5 +127,55 @@ describe('authMiddleware — token-less refusals explain themselves', () => {
     expect(result).toBeUndefined();
     expect(reply.statusCode).toBe(200);
     expect(reply.body).toBeUndefined();
+  });
+});
+
+describe('loopback session-token fallback is limited to the SAME OS user', () => {
+  // A shared login node puts other accounts on 127.0.0.1 too. Handing them the
+  // browser's token is account takeover (fs read/write + notebook execution).
+  beforeEach(() => {
+    authState.validTokens.add('browser-session');
+    diskState.sessionToken = 'browser-session';
+  });
+
+  it('same-user loopback caller still gets the piggyback (the CLI keeps working)', async () => {
+    peerState.verdict = 'same-user';
+    const reply = fakeReply();
+    const r = await authMiddleware(fakeRequest({ ip: '127.0.0.1' }), reply);
+    expect(r).toBeUndefined();
+    expect(reply.statusCode).toBe(200);
+  });
+
+  it('ANOTHER user on the same host is refused, and told why', async () => {
+    peerState.verdict = 'other-user';
+    const reply = fakeReply();
+    await authMiddleware(fakeRequest({ ip: '127.0.0.1' }), reply);
+    expect(reply.statusCode).toBe(401);
+    expect(reply.body.error).toBe('peer_not_owner');
+    expect(reply.body.message).toMatch(/different OS user|another user/i);
+  });
+
+  it('that user cannot borrow the token by pretending to be a browser either', async () => {
+    peerState.verdict = 'other-user';
+    const reply = fakeReply();
+    await authMiddleware(fakeRequest({ ip: '127.0.0.1', headers: { origin: 'http://localhost:3000' } }), reply);
+    expect(reply.statusCode).toBe(401);
+  });
+
+  it('a real token from another user is still honoured (auth, not identity, is the gate)', async () => {
+    peerState.verdict = 'other-user';
+    const reply = fakeReply();
+    const r = await authMiddleware(
+      fakeRequest({ ip: '127.0.0.1', headers: { authorization: 'Bearer browser-session' } }), reply);
+    expect(r).toBeUndefined();
+    expect(reply.statusCode).toBe(200);
+  });
+
+  it('unknown peer (no /proc — macOS dev box) keeps the old convenience', async () => {
+    peerState.verdict = 'unknown';
+    const reply = fakeReply();
+    const r = await authMiddleware(fakeRequest({ ip: '127.0.0.1' }), reply);
+    expect(r).toBeUndefined();
+    expect(reply.statusCode).toBe(200);
   });
 });

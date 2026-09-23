@@ -18,6 +18,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { authService } from './auth-service';
 import { readClusterSecret } from '../cluster/cluster-secret';
+import { classifyPeer } from './peer-identity';
 
 const SESSION_TOKEN_PATH = path.join(os.homedir(), '.nebula', 'session-token');
 
@@ -219,8 +220,30 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
   // machine-local CLI/MCP credential merely because the TCP peer is loopback.
   const isBrowser = request.headers.origin !== undefined;
   const loopback = isLoopback(request.ip);
-  if (!token && loopback && !isBrowser) {
+  // "Loopback" is NOT "the same user" on a shared host: on a multi-user login
+  // node every other account reaches 127.0.0.1 too, and handing them the
+  // browser's session token is account takeover (fs read/write + notebook
+  // execution). Verified on a CRI login node with 14 other users logged in.
+  // So the fallback is gated on the peer's OS uid where the kernel can tell
+  // us (Linux /proc/net/tcp); 'unknown' (macOS/Windows dev boxes) keeps the
+  // previous convenience, since that is where single-user assumptions hold.
+  const peer = loopback
+    ? classifyPeer(request.socket?.remotePort, request.socket?.localPort)
+    : 'unknown';
+  // Only the PIGGYBACK is withheld from other users — a caller presenting a
+  // real token is authenticated and gets in regardless of which account it
+  // runs as. Identity is not the gate; credentials are.
+  if (!token && loopback && !isBrowser && peer !== 'other-user') {
     token = readSessionToken();
+  }
+  if (!token && peer === 'other-user') {
+    return reply.code(401).send({
+      error: 'peer_not_owner',
+      message:
+        'This request came from a different OS user on this machine, so it cannot borrow the ' +
+        'browser session of the account running Nebula. Authenticate with your own token ' +
+        '(NEBULA_TOKEN or ~/.nebula/token), or log in from a browser.',
+    });
   }
 
   if (!token) {
