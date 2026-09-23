@@ -360,3 +360,229 @@ if __name__ == "__main__":
         if not os.path.exists(OLD):
             sys.exit(f"missing {OLD} — download the demo-assets release first")
         splice(*segment(pngs))
+
+
+# ------------------------------------------------ v12: reworded opening ----
+# The original opening explained what an agent is ("A notebook for both human
+# and AI", "BUILT FOR AGENTS · Your AI works in the notebook", "You and your
+# AI…"). By now the audience ships with Claude Code or Codex open; the pitch
+# is not that an agent can touch a notebook, it is that you don't have to take
+# turns. Name the tools, skip the explanation, lead with concurrency.
+
+def intro_title():
+    g = [head()]
+    y = 470
+    g.append(f'<circle cx="{W/2}" cy="{y-146}" r="46" fill="#38bdf8" opacity="0.28" filter="url(#soft)"/>')
+    g.append(f'<circle cx="{W/2}" cy="{y-146}" r="34" fill="url(#orb)"/>')
+    g.append(f'<circle cx="{W/2}" cy="{y-146}" r="39" fill="none" stroke="#60a5fa" stroke-opacity="0.5" stroke-width="2"/>')
+    g.append(f'<text x="{W/2-268}" y="{y}" font-size="82" font-weight="700" fill="url(#accent)">Nebula</text>')
+    g.append(f'<text x="{W/2+14}" y="{y}" font-size="82" font-weight="700" fill="#ffffff">Notebook</text>')
+    g.append(f'<text x="{W/2}" y="{y+72}" font-size="31" fill="{SUB}" text-anchor="middle">'
+             f'You and your coding agent, in the same cells.</text>')
+    g.append("</svg>")
+    return "".join(g)
+
+
+def d_tools(y=640):
+    """The agents people already run — named, not explained."""
+    g = []
+    names = (("Claude Code", CYAN), ("Codex", LAV), ("Cursor", GREEN), ("…any MCP client", MUTED))
+    widths = [len(n) * 13 + 56 for n, _ in names]
+    total = sum(widths) + 26 * (len(names) - 1)
+    x = W / 2 - total / 2
+    for (label, col), wd in zip(names, widths):
+        c, _ = chip(x, y - 28, label, col, w=wd, h=56, size=22)
+        g.append(c)
+        x += wd + 26
+    return "".join(g)
+
+
+def intro_tools():
+    return (head() + kicker("THE AGENT YOU ALREADY RUN")
+            + headline("Drives this notebook.", "", y=500)
+            + d_tools() + subtitle("MCP server or the nebula CLI — nothing new to learn", y=790)
+            + "</svg>")
+
+
+def d_concurrent(y=628):
+    """Two lanes writing the same stack of cells at once."""
+    g = []
+    for i in range(5):
+        cy = y - 54 + i * 26
+        g.append(f'<rect x="{W/2-150}" y="{cy}" width="300" height="18" rx="6" fill="#1b2540"/>')
+    g.append(f'<rect x="{W/2-150}" y="{y-54+26}" width="300" height="18" rx="6" fill="{CYAN}" opacity="0.85"/>')
+    g.append(f'<rect x="{W/2-150}" y="{y-54+3*26}" width="300" height="18" rx="6" fill="{LAV}" opacity="0.85"/>')
+    g.append(f'<path d="M{W/2-320} {y-18} h140 m-12-9 12 9-12 9" stroke="{CYAN}" stroke-width="2.6" '
+             f'fill="none" stroke-linecap="round" stroke-linejoin="round"/>')
+    g.append(f'<text x="{W/2-330}" y="{y-12}" font-size="21" fill="{CYAN}" text-anchor="end">you</text>')
+    g.append(f'<path d="M{W/2+320} {y+34} h-140 m12-9-12 9 12 9" stroke="{LAV}" stroke-width="2.6" '
+             f'fill="none" stroke-linecap="round" stroke-linejoin="round"/>')
+    g.append(f'<text x="{W/2+330}" y="{y+40}" font-size="21" fill="{LAV}">your agent</text>')
+    return "".join(g)
+
+
+def intro_concurrent():
+    return (head() + kicker("NO TURN-TAKING")
+            + headline("Edit the same cell.", "Both of you.")
+            + d_concurrent()
+            + subtitle("Per-cell concurrency — the agent retries on your version, never over it", y=782)
+            + "</svg>")
+
+
+def build_intro():
+    return [("i1-title", intro_title(), 3.5),
+            ("i2-tools", intro_tools(), 3.6),
+            ("i3-concurrent", intro_concurrent(), 4.2)]
+
+
+# --------------------------------------- v12: alternating app-view frames --
+# The film's rhythm is dark card -> light app -> dark card. The new features
+# have no footage (they postdate the shoot), so the "app" half is drawn in the
+# product's own UI language (scripts/demo-illustrate.py) and captioned with the
+# film's pill, not that script's lower-third — so it cuts like the recordings.
+
+_DI = None
+
+
+def _di():
+    """Load the sibling scene library (its filename has a hyphen)."""
+    global _DI
+    if _DI is None:
+        import importlib.util as iu
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-illustrate.py")
+        spec = iu.spec_from_file_location("demo_illustrate", path)
+        _DI = iu.module_from_spec(spec)
+        spec.loader.exec_module(_DI)
+    return _DI
+
+
+_CAP = None          # set per scene so the pill carries OUR line, not the scene's
+
+
+def _pill_caption(text, sub=None):
+    """The film's caption: a dark rounded pill, centred near the bottom."""
+    di = _di()
+    text = _CAP or text
+    size, pad = 20.5, 26
+    w = len(text) * size * 0.505 + pad * 2
+    x, y = di.W / 2 - w / 2, di.H - 52
+    return (f'<g filter="url(#sh)">'
+            f'<rect x="{x}" y="{y}" width="{w}" height="38" rx="11" fill="#1e2536" '
+            f'stroke="#6d5bd0" stroke-opacity="0.55"/></g>'
+            f'<text x="{di.W/2}" y="{y + 25}" font-size="{size}" fill="#ffffff" font-weight="700" '
+            f'text-anchor="middle">{esc(text)}</text>')
+
+
+def app_views():
+    """(slug, svg) for the light app halves, captioned film-style."""
+    global _CAP
+    di = _di()
+    di.caption = _pill_caption          # scene functions read this at call time
+    specs = [
+        ("a1-focus",    di.s_focus,     (),   "It edits the notebook you're looking at"),
+        ("a2-runs",     di.s_runs,      (),   "Run above, or this cell and everything below"),
+        ("a3-collapse", di.s_collapse,  (1,), "Fold a long cell to a height you choose"),
+        ("a4-sealed",   di.s_sealed,    (),   "Sealed: replayed clean, outputs matched, hash-bound"),
+        ("a5-keys",     di.s_security,  (),   "Passkeys, 2FA, and a real token for your agent"),
+        ("a6-arch",     di.s_compute,   (0,), "aarch64 queue? It hands the setup to your agent"),
+    ]
+    out = []
+    for slug, fn, args, cap in specs:
+        _CAP = cap
+        out.append((slug, fn(*args), cap))
+    _CAP = None
+    return out
+
+
+def build_v12_tail():
+    """Feature block: dark card, then the app view of the same feature."""
+    cards = {slug.split("-", 1)[1]: svg for slug, svg in build_cards() if slug != "07-end"}
+    views = {slug.split("-", 1)[1]: (svg, cap) for slug, svg, cap in
+             [(s, v, c) for s, v, c in app_views()]}
+    order = ["focus", "runs", "collapse", "sealed", "keys", "arch"]
+    seq = []
+    for key in order:
+        seq.append((f"c-{key}", cards[key], 3.4))
+        svg, _cap = views[key]
+        seq.append((f"v-{key}", svg, 3.4))
+    seq.append(("z-end", end_card(), 4.4))
+    return seq
+
+
+def render_list(items, tag):
+    os.makedirs(OUT, exist_ok=True)
+    pngs, holds = [], []
+    for slug, svg, secs in items:
+        s = os.path.join(OUT, f"{tag}{slug}.svg")
+        p = os.path.join(OUT, f"{tag}{slug}.png")
+        with open(s, "w") as fh:
+            fh.write(svg)
+        subprocess.run(["rsvg-convert", "-w", str(W), "-h", str(H), "-o", p, s], check=True)
+        pngs.append(p)
+        holds.append(secs)
+    return pngs, holds
+
+
+def clip_from(pngs, holds, dst):
+    inputs = []
+    for p, sec in zip(pngs, holds):
+        inputs += ["-loop", "1", "-t", f"{sec + XFADE:.2f}", "-i", p]
+    chain, prev, off = [], "[0:v]", 0.0
+    for i in range(1, len(pngs)):
+        off += holds[i - 1]
+        lbl = f"[v{i}]"
+        chain.append(f"{prev}[{i}:v]xfade=transition=fade:duration={XFADE}:offset={off:.2f}{lbl}")
+        prev = lbl
+    cmd = ["ffmpeg", "-y", "-v", "error"] + inputs
+    if chain:
+        cmd += ["-filter_complex", ";".join(chain), "-map", prev]
+    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "30", "-crf", "18", dst]
+    subprocess.run(cmd, check=True)
+    d = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                              "-of", "default=nw=1:nk=1", dst], capture_output=True, text=True).stdout)
+    return d
+
+
+def build_v12():
+    """New opening + untouched recording + alternating feature block + close."""
+    OPENING_END = 11.0                      # original's three intro cards
+    intro_png, intro_hold = render_list(build_intro(), "v12-")
+    tail_png, tail_hold = render_list(build_v12_tail(), "v12-")
+    intro_clip = os.path.join(OUT, "v12-intro.mp4")
+    tail_clip = os.path.join(OUT, "v12-tail.mp4")
+    di = clip_from(intro_png, intro_hold, intro_clip)
+    dt = clip_from(tail_png, tail_hold, tail_clip)
+    mid = os.path.join(OUT, "v12-mid.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", str(OPENING_END), "-i", OLD,
+                    "-t", str(SPLICE_AT - OPENING_END), "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-crf", "18", "-an", mid], check=True)
+    lst = os.path.join(OUT, "v12.txt")
+    with open(lst, "w") as fh:
+        for f in (intro_clip, mid, tail_clip):
+            fh.write(f"file '{f}'\n")
+    video = os.path.join(OUT, "v12-video.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst,
+                    "-c", "copy", video], check=True)
+    total = di + (SPLICE_AT - OPENING_END) + dt
+    # music: the original track, then a mid-track passage to cover the new tail
+    a1 = os.path.join(OUT, "v12-a1.m4a")
+    a2 = os.path.join(OUT, "v12-a2.m4a")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", OLD, "-t", f"{di + SPLICE_AT - OPENING_END:.2f}",
+                    "-vn", "-c:a", "aac", "-b:a", "192k", a1], check=True)
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", "54", "-i", OLD, "-t", f"{dt + 1:.2f}",
+                    "-vn", "-af", f"afade=t=in:st=0:d=0.9,afade=t=out:st={dt-1.2:.2f}:d=1.2",
+                    "-c:a", "aac", "-b:a", "192k", a2], check=True)
+    alst = os.path.join(OUT, "v12a.txt")
+    with open(alst, "w") as fh:
+        fh.write(f"file '{a1}'\nfile '{a2}'\n")
+    audio = os.path.join(OUT, "v12-audio.m4a")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", alst,
+                    "-c", "copy", audio], check=True)
+    out = os.path.join(ROOT, "build", "film", "nebula-demo-v12.mp4")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", video, "-i", audio, "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", out],
+                   check=True)
+    d = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                        "-of", "default=nw=1:nk=1", out], capture_output=True, text=True).stdout.strip()
+    print(f"{out}  ({float(d):.1f}s, {os.path.getsize(out)/1e6:.1f} MB)")
+    return out
