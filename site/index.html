@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebula Notebook</title>
+<meta name="description" content="A notebook where you and your coding agent work in the same cells — real Jupyter kernels, a CLI and MCP server, and compute wherever it lives.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' stop-color='%238b5cf6'/%3E%3Cstop offset='50%25' stop-color='%236366f1'/%3E%3Cstop offset='100%25' stop-color='%233b82f6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='6' fill='url(%23g)'/%3E%3Cpath d='M8 10h16M8 16h12M8 22h14' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+<meta property="og:title" content="Nebula Notebook">
+<meta property="og:description" content="The notebook is the interface — for you and your agent, in the same cells.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* ------------------------------------------------------------------ *
+ * Nebula deliberately commits to one visual world — the night ground
+ * of the product film alternating with the app's own paper. Every
+ * colour is painted explicitly so the page holds on any host ground.
+ * ------------------------------------------------------------------ */
+:root{
+  --violet:#8b5cf6; --indigo:#6366f1; --blue:#3b82f6;
+  --grad:linear-gradient(135deg,#8b5cf6 0%,#6366f1 50%,#3b82f6 100%);
+  --agent:#a855f7; --agent-soft:#c4b5fd;
+  --green:#4ade80; --amber:#fbbf24; --rose:#fb7185;
+  --night:#0a0e19; --night-2:#0d1526; --night-3:#141d30;
+  --paper:#f7f9fc; --paper-2:#ffffff;
+  --ink:#0e1524; --ink-2:#334155;
+  --sans:"Chivo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --pad:clamp(1.25rem,5vw,4rem);
+  --maxw:72rem;
+  --measure:38rem;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--night);color:#e8edf7;font-family:var(--sans);font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 var(--pad)}
+
+/* bands carry their own ground + text tokens; components read the tokens */
+.band{--bg:var(--night);--fg:#e8edf7;--fg-soft:#9fb0cc;--rule:#1e293b;--card:#111a2b;--card-rule:#22304a;--codebg:#0a1220;
+      background:var(--bg);color:var(--fg);padding:clamp(3.5rem,8vw,6.5rem) 0}
+.band--paper{--bg:var(--paper);--fg:var(--ink);--fg-soft:#4b5a73;--rule:#dde5f0;--card:#ffffff;--card-rule:#e2e9f3;--codebg:#eef3fa}
+.band--hero{padding:clamp(2rem,5vw,3rem) 0 clamp(3.5rem,8vw,6rem);position:relative;overflow:hidden}
+
+/* starfield, the film's signature, kept faint */
+.stars{position:absolute;inset:0;pointer-events:none;opacity:.55}
+
+h1,h2,h3{font-weight:800;letter-spacing:-.025em;line-height:1.08;margin:0;text-wrap:balance}
+h1{font-size:clamp(2.5rem,6.4vw,4.4rem)}
+h2{font-size:clamp(1.85rem,4vw,2.9rem)}
+h3{font-size:1.0625rem;font-weight:600;letter-spacing:-.01em;line-height:1.35}
+.grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kicker{font-family:var(--mono);font-size:.75rem;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--fg-soft);margin:0 0 1.1rem}
+.lead{font-size:clamp(1.05rem,1.8vw,1.22rem);color:var(--fg-soft);max-width:var(--measure);margin:1.4rem 0 0}
+p{margin:1rem 0 0;color:var(--fg-soft);max-width:var(--measure)}
+a{color:inherit}
+a:focus-visible,button:focus-visible{outline:2px solid var(--indigo);outline-offset:3px;border-radius:4px}
+
+/* ---------- top bar ---------- */
+.top{display:flex;align-items:center;gap:1rem;padding:1.5rem 0 0}
+.brand{display:flex;align-items:center;gap:.6rem;text-decoration:none;font-weight:800;letter-spacing:-.02em;font-size:1.0625rem}
+.brand svg{width:26px;height:26px;border-radius:6px;flex:none}
+.top nav{margin-left:auto;display:flex;gap:1.4rem;font-size:.875rem}
+.top nav a{color:#9fb0cc;text-decoration:none}
+.top nav a:hover{color:#e8edf7}
+@media(max-width:46rem){.top nav a.hide-sm{display:none}}
+
+/* ---------- install ---------- */
+.install{display:flex;flex-wrap:wrap;gap:.6rem;margin:2rem 0 0;align-items:center}
+.cmd{display:flex;align-items:center;gap:.7rem;background:var(--codebg);border:1px solid var(--card-rule);
+     border-radius:9px;padding:.7rem .85rem;font-family:var(--mono);font-size:.875rem;color:var(--fg)}
+.cmd .sigil{color:var(--green)}
+.copy{border:0;background:transparent;color:var(--fg-soft);font-family:var(--mono);font-size:.72rem;
+      cursor:pointer;padding:.2rem .4rem;border-radius:5px}
+.copy:hover{color:var(--fg);background:rgba(127,150,190,.14)}
+.note{font-family:var(--mono);font-size:.76rem;color:var(--fg-soft)}
+
+/* ---------- specimen frames ---------- */
+.frame{background:var(--card);border:1px solid var(--card-rule);border-radius:12px;overflow:hidden;
+       box-shadow:0 18px 40px -24px rgba(5,10,25,.8)}
+.frame-bar{display:flex;align-items:center;gap:.5rem;padding:.6rem .9rem;border-bottom:1px solid var(--card-rule);
+           font-family:var(--mono);font-size:.72rem;color:var(--fg-soft)}
+.led{width:.5rem;height:.5rem;border-radius:50%;flex:none;background:var(--green)}
+.cell{padding:.8rem .95rem;border-bottom:1px solid var(--card-rule)}
+.cell:last-child{border-bottom:0}
+.cell-meta{display:flex;gap:.6rem;align-items:center;font-family:var(--mono);font-size:.68rem;color:var(--fg-soft);margin-bottom:.5rem}
+.tag{margin-left:auto;font-family:var(--mono);font-size:.63rem;letter-spacing:.04em;color:var(--agent-soft);
+     border:1px solid var(--agent);border-radius:999px;padding:.05rem .45rem}
+pre{margin:0;font-family:var(--mono);font-size:.8rem;line-height:1.7;white-space:pre;overflow-x:auto;color:var(--fg)}
+.ask{display:flex;gap:.6rem;align-items:center;padding:.65rem .95rem;border-bottom:1px solid var(--card-rule);
+     background:color-mix(in srgb,var(--agent) 12%,transparent);font-size:.875rem;color:var(--fg)}
+.ask b{font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--agent-soft);font-weight:500;flex:none}
+.touched{box-shadow:inset 2px 0 0 var(--agent)}
+.del{color:var(--fg-soft);text-decoration:line-through}
+.ins{color:var(--agent-soft)}
+.ok{color:var(--green)}
+.dim{color:var(--fg-soft)}
+figcaption{margin-top:.7rem;font-size:.8125rem;color:var(--fg-soft);max-width:44ch}
+
+/* ---------- layout helpers ---------- */
+.split{display:grid;gap:clamp(1.75rem,4vw,3.25rem);align-items:center}
+@media(min-width:60rem){.split{grid-template-columns:1fr 1.05fr}.split.rev>figure{order:-1}}
+.steps{list-style:none;margin:1.75rem 0 0;padding:0;display:grid;gap:1.1rem;counter-reset:s}
+.steps li{display:grid;grid-template-columns:auto 1fr;gap:.9rem;counter-increment:s}
+.steps li::before{content:counter(s);font-family:var(--mono);font-size:.7rem;font-weight:600;color:#fff;
+  background:var(--grad);width:1.45rem;height:1.45rem;border-radius:50%;display:grid;place-items:center;margin-top:.15rem}
+.steps p{margin:.15rem 0 0;font-size:.9375rem}
+.grid{display:grid;gap:1.6rem 2.2rem;margin-top:2.75rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+.grid h3{margin-bottom:.35rem}
+.grid p{margin:0;font-size:.9375rem}
+.grid .ico{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;
+           color:var(--indigo);display:block;margin-bottom:.5rem}
+.band--paper .grid .ico{color:var(--violet)}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.5rem}
+.chip{font-family:var(--mono);font-size:.76rem;border:1px solid var(--card-rule);border-radius:999px;
+      padding:.3rem .7rem;color:var(--fg-soft)}
+.rule{border:0;border-top:1px solid var(--rule);margin:0}
+
+/* ---------- close ---------- */
+.cta{text-align:center}
+.cta h2{margin-bottom:1rem}
+.cta .install{justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:.5rem;background:var(--grad);color:#fff;text-decoration:none;
+     font-weight:600;font-size:.9375rem;padding:.72rem 1.3rem;border-radius:9px}
+footer{background:var(--night-2);color:#7f90ad;padding:2.5rem 0;font-size:.8125rem}
+footer .wrap{display:flex;flex-wrap:wrap;gap:1rem 2rem;align-items:center}
+footer a{color:#9fb0cc}
+footer .right{margin-left:auto;font-family:var(--mono);font-size:.75rem}
+</style>
+</head>
+<body>
+
+<!-- ========================= HERO ========================= -->
+<section class="band band--hero">
+  <svg class="stars" aria-hidden="true" preserveAspectRatio="none" viewBox="0 0 1200 760">
+    <g fill="#ffffff">
+      <circle cx="90" cy="120" r="1.2" opacity=".5"/><circle cx="240" cy="60" r="1" opacity=".35"/>
+      <circle cx="420" cy="180" r="1.6" opacity=".4"/><circle cx="610" cy="90" r="1" opacity=".5"/>
+      <circle cx="800" cy="150" r="1.3" opacity=".35"/><circle cx="980" cy="70" r="1" opacity=".45"/>
+      <circle cx="1120" cy="200" r="1.5" opacity=".4"/><circle cx="150" cy="330" r="1" opacity=".3"/>
+      <circle cx="350" cy="420" r="1.2" opacity=".35"/><circle cx="700" cy="380" r="1" opacity=".3"/>
+      <circle cx="1050" cy="430" r="1.4" opacity=".35"/><circle cx="520" cy="620" r="1.1" opacity=".3"/>
+      <circle cx="880" cy="660" r="1" opacity=".28"/><circle cx="200" cy="700" r="1.3" opacity=".3"/>
+    </g>
+    <g fill="#c4b5fd"><circle cx="300" cy="240" r="1.6" opacity=".5"/><circle cx="930" cy="300" r="1.4" opacity=".45"/></g>
+    <g fill="#7dd3fc"><circle cx="640" cy="520" r="1.5" opacity=".45"/><circle cx="110" cy="520" r="1.2" opacity=".4"/></g>
+  </svg>
+
+  <div class="wrap">
+    <div class="top">
+      <a class="brand" href="#">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="bm" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="50%" stop-color="#6366f1"/><stop offset="100%" stop-color="#3b82f6"/></linearGradient></defs><rect width="32" height="32" rx="6" fill="url(#bm)"/><path d="M8 10h16M8 16h12M8 22h14" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+        Nebula Notebook
+      </a>
+      <nav>
+        <a class="hide-sm" href="#agents">Agents</a>
+        <a class="hide-sm" href="#notebook">Notebook</a>
+        <a class="hide-sm" href="#compute">Compute</a>
+        <a href="https://github.com/jzhoulab/nebula-notebook">GitHub</a>
+      </nav>
+    </div>
+
+    <div class="split" style="margin-top:clamp(2.5rem,6vw,4.5rem)">
+      <div>
+        <p class="kicker">Open source · v0.2.55</p>
+        <h1>The notebook is the <span class="grad">interface</span>.</h1>
+        <p class="lead">
+          Code, figures and prose already live in one document. Nebula makes that document a
+          real interface for both of you — you edit it, and your agent reads, edits and runs
+          the same cells, in the same file, while you watch.
+        </p>
+
+        <div class="install">
+          <div class="cmd"><span class="sigil">$</span><span id="cmd1">npx nebula-notebook</span>
+            <button class="copy" data-copy="#cmd1" type="button">copy</button></div>
+          <span class="note">then open localhost:3000</span>
+        </div>
+      </div>
+
+      <figure style="margin:0">
+        <div class="frame">
+          <div class="frame-bar"><span class="led"></span> chromatin-model.ipynb<span style="margin-left:auto">Python 3.12 · idle</span></div>
+          <div class="ask"><b>you → agent</b><span>refit this with 5-fold CV and show me the spread</span></div>
+          <div class="cell touched">
+            <div class="cell-meta"><span>#12</span><span>[9]</span><span>1.4 s</span><span class="tag">agent edited</span></div>
+<pre><span class="del">- auc = evaluate(model, holdout)</span>
+<span class="ins">+ cv  = cross_validate(model, X, y, cv=5,</span>
+<span class="ins">+                      scoring="average_precision")</span>
+<span class="ins">+ auc = cv["test_score"]</span>
+  auc.mean().round(3), auc.std().round(3)
+<span class="ok">(0.918, 0.011)</span></pre>
+          </div>
+          <div class="cell">
+            <div class="cell-meta"><span>#13</span><span>figure</span><span class="dim">rerun by agent</span></div>
+            <svg viewBox="0 0 420 92" style="width:100%;height:auto;display:block" role="img" aria-label="Average precision across five cross-validation folds, each between 0.90 and 0.93, mean 0.918">
+              <defs><linearGradient id="bars" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#6366f1"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs>
+              <line x1="30" y1="74" x2="408" y2="74" stroke="currentColor" opacity=".25"/>
+              <line x1="30" y1="30" x2="408" y2="30" stroke="currentColor" opacity=".12" stroke-dasharray="3 4"/>
+              <g fill="url(#bars)">
+                <rect x="58" y="36" width="36" height="38" rx="2"/><rect x="134" y="32" width="36" height="42" rx="2"/>
+                <rect x="210" y="42" width="36" height="32" rx="2"/><rect x="286" y="35" width="36" height="39" rx="2"/>
+                <rect x="362" y="39" width="36" height="35" rx="2"/>
+              </g>
+              <text x="30" y="26" font-family="IBM Plex Mono,monospace" font-size="9" fill="currentColor" opacity=".55">0.93</text>
+              <text x="30" y="88" font-family="IBM Plex Mono,monospace" font-size="9" fill="currentColor" opacity=".55">fold 1–5</text>
+              <text x="330" y="88" font-family="IBM Plex Mono,monospace" font-size="9" fill="#c4b5fd">mean 0.918</text>
+            </svg>
+          </div>
+          <div class="frame-bar" style="border-bottom:0;border-top:1px solid var(--card-rule)">
+            <span style="color:var(--agent-soft)">agent</span> nb edit #12 <span class="ok">✓</span> · run #12 <span class="ok">✓ 1.4 s</span> · run #13 <span class="ok">✓</span>
+          </div>
+        </div>
+        <figcaption>Asked in plain English, in the notebook. The edit lands as a diff you can see — and undo.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= AGENTS ========================= -->
+<section class="band band--paper" id="agents">
+  <div class="wrap">
+    <div class="split rev">
+      <div>
+        <p class="kicker">Built for the agent you already run</p>
+        <h2>A CLI it already knows. Or&nbsp;MCP.</h2>
+        <p>
+          Nebula ships a real command-line interface and an MCP server. Whichever assistant
+          you use drives the notebook through one of them — reading cells, editing them,
+          running them and reading the output back, without a browser anywhere in the loop.
+        </p>
+        <ol class="steps">
+          <li><div><h3>It works on the file you're looking at</h3>
+            <p><code style="font-family:var(--mono)">nebula context</code> reports the notebook you're viewing, and any operation on a different one carries a one-time notice — so "this cell" means what you think it means, even with two tabs open.</p></div></li>
+          <li><div><h3>Your edits are never clobbered</h3>
+            <p>Per-cell optimistic concurrency: if you've changed a cell since the agent read it, it gets your version back and re-applies its change on top, instead of overwriting you.</p></div></li>
+          <li><div><h3>It holds a visible session</h3>
+            <p>An agent takes the edit lock explicitly and the browser shows a badge while it's working, so nothing happens to your notebook invisibly.</p></div></li>
+        </ol>
+        <div class="chips">
+          <span class="chip">Claude Code</span><span class="chip">Codex</span>
+          <span class="chip">Cursor</span><span class="chip">any MCP client</span><span class="chip">any shell</span>
+        </div>
+      </div>
+
+      <figure style="margin:0">
+        <div class="frame">
+          <div class="frame-bar"><span class="led"></span> agent terminal</div>
+          <div class="cell">
+<pre><span class="dim">$</span> nebula nb read analysis.ipynb
+<span class="dim">  52 cells · kernel idle · python3.12</span>
+
+<span class="dim">$</span> nebula run analysis.ipynb fit-model --tail 5
+<span class="ok">  ✓ ok · 12.4 s</span>
+<span class="dim">  epoch 40  val_ap 0.918  early stop</span>
+
+<span class="dim">$</span> nebula context
+<span class="ok">  /work/analysis.ipynb</span>  <span class="dim">(you switched 4 s ago)</span></pre>
+          </div>
+        </div>
+        <figcaption>The same operations are available as MCP tools — install with <span style="font-family:var(--mono)">npx nebula-notebook-mcp setup-mcp</span>.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= THE NOTEBOOK ========================= -->
+<section class="band" id="notebook">
+  <div class="wrap">
+    <p class="kicker">And still a real notebook</p>
+    <h2>Fast, honest, and <span class="grad">yours to keep</span>.</h2>
+    <p class="lead">Everything above is useless if the notebook itself isn't good. Nebula is a complete
+      notebook first — one you'd want even with no agent anywhere near it.</p>
+
+    <div class="grid">
+      <div><span class="ico">Kernels</span><h3>Real Jupyter kernels</h3>
+        <p>Python, R, Julia and anything else with a kernelspec, over ZeroMQ. Conda, venv, uv and pixi environments are detected for you; kernels survive a server restart and reattach.</p></div>
+      <div><span class="ico">Formats</span><h3>Diffs you can review</h3>
+        <p>First-class <span style="font-family:var(--mono)">.ipynb</span>, Quarto <span style="font-family:var(--mono)">.qmd</span> and percent-format <span style="font-family:var(--mono)">.py</span>. Outputs are never serialised into the text formats, so a one-line change is a one-line diff.</p></div>
+      <div><span class="ico">Speed</span><h3>Big notebooks open instantly</h3>
+        <p>Virtualised cells with progressive rendering; editors mount lazily and heights are pinned through the swap, so scrolling a thousand-cell notebook never jumps.</p></div>
+      <div><span class="ico">History</span><h3>Undo that outlives the tab</h3>
+        <p>Every structural edit — yours and the agent's — is journaled to disk. The history panel time-travels to any past moment with diff highlighting and restores it in one click.</p></div>
+      <div><span class="ico">Outputs</span><h3>Interactive, not screenshots</h3>
+        <p>Plotly and native JS outputs stay interactive, <span style="font-family:var(--mono)">tqdm</span> renders as one clean bar, and tall output or long source folds to a height you drag.</p></div>
+      <div><span class="ico">Access</span><h3>Yours only</h3>
+        <p>TOTP two-factor and passkeys, 30-day device sessions, and real tokens for agents — so a notebook on a shared login node stays yours.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= COMPUTE ========================= -->
+<section class="band band--paper" id="compute">
+  <div class="wrap">
+    <div class="split">
+      <div>
+        <p class="kicker">Where your compute lives</p>
+        <h2>Queue a node from the kernel menu.</h2>
+        <p>
+          On an HPC login node Nebula detects the scheduler and offers allocations directly:
+          pick a partition and QoS from a live queue-load view — idle CPUs, idle GPUs by
+          model, backlog — and your kernel comes up on the compute node. No sbatch script,
+          no second SSH tunnel, nothing to hunt for.
+        </p>
+        <p>
+          It is detection-gated, so on a laptop you never see it. Heterogeneous clusters are
+          handled too: queues are labelled by CPU architecture, and an ARM queue without a
+          runtime hands you a setup brief filled with your own paths.
+        </p>
+        <div class="chips">
+          <span class="chip">SLURM</span><span class="chip">x86_64 + aarch64</span>
+          <span class="chip">GPU by model</span><span class="chip">idle auto-release</span>
+        </div>
+      </div>
+
+      <figure style="margin:0">
+        <div class="frame">
+          <div class="frame-bar"><span class="led"></span> new compute allocation<span style="margin-left:auto">SLURM detected</span></div>
+          <div class="cell">
+<pre>PARTITION   ARCH      CPUS idle   GPUS idle          QUEUE
+gpuq        x86_64    148/288     14 A100 · 1 H200     325
+tier1q      x86_64    759/4704    —                   1418
+<span class="ins">pearsonq    aarch64   576/576     —                      0</span>
+</pre>
+          </div>
+          <div class="cell" style="background:color-mix(in srgb,var(--green) 10%,transparent)">
+<pre><span class="ok">●</span> cri22cn409 · aarch64 · online
+<span class="dim">  kernels now run on the compute node —</span>
+<span class="dim">  same notebook, same history, same agent.</span></pre>
+          </div>
+        </div>
+        <figcaption>One allocation hosts many kernels: queue once, run several notebooks in it.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= PROVENANCE ========================= -->
+<section class="band">
+  <div class="wrap">
+    <div class="split rev">
+      <div>
+        <p class="kicker">When the result matters</p>
+        <h2>A figure you can <span class="grad">prove</span>.</h2>
+        <p>
+          Seal a result and Nebula re-runs the notebook top to bottom in a fresh, dedicated
+          kernel, checks every output against the exploratory run, and binds the notebook,
+          its artifacts and the environment into one hash-verified manifest. The sealed copy
+          is read-only — the UI refuses edits, and so does the filesystem layer underneath.
+        </p>
+        <p>It is the difference between a figure you believe and one you can hand to a reviewer.</p>
+      </div>
+      <figure style="margin:0">
+        <div class="frame">
+          <div class="frame-bar" style="background:#1e1b4b;color:#c7d2fe"><span class="led" style="background:#c7d2fe"></span> sealed evidence — read-only<span style="margin-left:auto">seal 7f3a…c19</span></div>
+          <div class="cell">
+<pre><span class="ok">✓</span> replayed in a fresh kernel — every output matched
+
+<span class="dim">notebook    </span>sha256 9c2e…
+<span class="dim">figure.png  </span>sha256 41ab…
+<span class="dim">inputs      </span>sha256 d80f…
+<span class="dim">environment </span>python 3.12 · numpy 2.1</pre>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ========================= CLOSE ========================= -->
+<section class="band band--paper">
+  <div class="wrap cta">
+    <h2>Two commands.</h2>
+    <p style="margin-left:auto;margin-right:auto">Runs on your laptop, your lab server, or a cluster login node.</p>
+    <div class="install">
+      <div class="cmd"><span class="sigil">$</span><span id="cmd2">npx nebula-notebook</span>
+        <button class="copy" data-copy="#cmd2" type="button">copy</button></div>
+      <div class="cmd"><span class="sigil">$</span><span id="cmd3">npx nebula-notebook-mcp setup-mcp</span>
+        <button class="copy" data-copy="#cmd3" type="button">copy</button></div>
+    </div>
+    <p style="margin:1.75rem auto 0">
+      <a class="btn" href="https://github.com/jzhoulab/nebula-notebook">Read the source on GitHub</a>
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>Nebula Notebook — built in the <a href="https://zhoulab.io">Zhou Lab</a>, University of Chicago.</span>
+    <span class="right"><a href="https://github.com/jzhoulab/nebula-notebook">github.com/jzhoulab/nebula-notebook</a> · MIT</span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var el = document.querySelector(b.dataset.copy);
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim()).then(function () {
+      var was = b.textContent; b.textContent = 'copied';
+      setTimeout(function () { b.textContent = was; }, 1600);
+    }).catch(function () { b.textContent = 'select & copy'; });
+  });
+});
+</script>
+</body>
+</html>
