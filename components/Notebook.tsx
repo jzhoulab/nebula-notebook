@@ -4519,7 +4519,7 @@ export const Notebook: React.FC = () => {
           </div>
         )}
 
-        <header className="flex-none bg-slate-50/90 backdrop-blur py-3 border-b border-slate-200 px-4 z-20">
+        <header className="relative flex-none bg-slate-50/90 backdrop-blur py-3 border-b border-slate-200 px-4 z-40">
             <div className={`flex flex-wrap justify-between items-start gap-3 ${notebookChromeClass}`}>
                <div className="flex min-w-0 flex-1 items-start gap-3">
                  <button

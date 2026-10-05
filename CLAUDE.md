@@ -396,6 +396,13 @@ other test:
   `components/`, `hooks/`, `services/`, `lib/` with the TypeScript compiler
   API and fails with `file:line hook() runs after the early return on line N`.
 
+- **Overlay stacking order** (`components/__tests__/stacking-order.test.ts`):
+  the notebook header is a stacking context (z-indexed flex item +
+  `backdrop-blur`), so the kernel menu's `z-50` dropdown is clamped to the
+  header's own layer — when the sticky cell toolbar outranked that layer it
+  painted over the open "Active Kernel" menu. The guard reads the z-index off
+  each source file and asserts header > cell toolbar > output controls.
+
 Add new guards here when a class of bug can be detected statically.
 
 ## TDD Workflow (Required)
