@@ -15,6 +15,7 @@ import {
   SealedPathLockedError,
 } from '../fs/sealed-path';
 import replaySealRoutes from './replay-seal';
+import sessionExecutionRoutes from './session-execution';
 
 // Initialize headless handler with kernel service for cell execution
 const headlessHandler = new HeadlessOperationHandler(fsService, operationRouter, kernelService);
@@ -27,6 +28,7 @@ function sendSealedError(reply: FastifyReply, error: unknown): FastifyReply | nu
 
 export default async function notebookRoutes(fastify: FastifyInstance) {
   await fastify.register(replaySealRoutes);
+  await fastify.register(sessionExecutionRoutes);
 
   /**
    * Get cell metadata schema
