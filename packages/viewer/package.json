@@ -1,0 +1,12 @@
+{
+  "name": "@nebula-notebook/viewer",
+  "version": "0.1.0",
+  "description": "Serverless read-only viewing of saved Jupyter/Nebula notebooks",
+  "type": "module",
+  "license": "MIT",
+  "exports": {".": {"types": "./index.d.ts", "import": "./index.js"}, "./style.css": "./style.css"},
+  "files": ["index.js", "index.d.ts", "style.css", "README.txt", "LICENSE"],
+  "scripts": {"test": "node --test test/*.test.mjs"},
+  "devDependencies": {"jsdom": "^27.3.0"},
+  "engines": {"node": ">=20.19.0"}
+}
