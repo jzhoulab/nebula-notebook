@@ -13,4 +13,4 @@ export interface Notebook {
   metadata?: Record<string, unknown>;
 }
 export function parseNotebook(input: string | Notebook): Notebook & {cells: (NotebookCell & {source: string})[]};
-export function mountNotebook(target: HTMLElement, input: string | Notebook, options?: {title?: string; showCode?: boolean}): {setShowCode(value: boolean): void; destroy(): void};
+export function mountNotebook(target: HTMLElement, input: string | Notebook, options?: {title?: string; showCode?: boolean; filename?: string}): {element: HTMLElement; setShowCode(value: boolean): void; destroy(): void};

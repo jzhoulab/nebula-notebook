@@ -1,0 +1,14 @@
+Nebula browser reading view
+
+Reuse the application presentation: slate canvas #f8fafc, white cells #ffffff, ink #1e293b, borders #e2e8f0, blue actions #2563eb, purple syntax #9333ea. Use the same system sans and monospace stacks, compact cell toolbars, saved execution counters, and Markdown/Python renderer components.
+
+Layout: filename and snapshot status above reading controls; optional contents rail beside the notebook column. Each cell retains Nebula toolbar/source/output structure. On small screens the contents rail stacks above cells.
+
+[Notebook title  .ipynb     Static snapshot]
+[Contents | Hide code | Download .ipynb]
+[Sections] [#1 Text                    ]
+           [#2 [1] Code | source toggle]
+           [source                    ]
+           [saved output              ]
+
+Review: preserve Nebula rather than adopting the Observatory typography/cards. Use the real MarkdownPreview and PythonHighlighter; extract existing cell presentation constants for shared use. Shadow DOM isolates host CSS without requiring React or a server in the embedding page. Arbitrary active notebook outputs remain inert; full application/kernel behavior stays in Nebula.

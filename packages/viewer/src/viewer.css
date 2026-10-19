@@ -1,0 +1,34 @@
+@import "tailwindcss" source(none);
+@source "./NotebookViewer.tsx";
+@source "../../../components/MarkdownPreview.tsx";
+@source "../../../components/PythonHighlighter.tsx";
+@source "../../../lib/notebookPresentation.ts";
+
+@theme { --spacing:4px; --text-xs:12px; --text-sm:14px; --text-base:16px; --text-lg:18px; --text-xl:20px; --text-2xl:24px; }
+:host { display:block; color:#1e293b; font-family:ui-sans-serif,system-ui,sans-serif; font-size:14px; line-height:1.5; text-align:left; }
+.nebula-viewer { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+.nb-toolbar { background:#f8fafc; }
+.nb-controls { background:#fff; }
+.nb-reading-layout { display:grid; min-width:0; }
+.nb-with-contents { grid-template-columns:210px minmax(0,1fr); }
+.nb-pages { padding:16px; min-width:0; width:100%; max-width:1100px; margin:0 auto; }
+.nb-cell { scroll-margin-top:16px; overflow:hidden; }
+.nb-contents { padding:16px 8px; border-right:1px solid #e2e8f0; }
+.nb-section-link { display:block; width:100%; padding:8px; text-align:left; border-radius:4px; overflow-wrap:anywhere; cursor:pointer; color:#475569; }
+.nb-section-link:hover { background:#e2e8f0; color:#1e293b; }
+.nb-button,.nb-output-toggle { cursor:pointer; }
+.nb-icon-button { padding:4px; border-radius:4px; cursor:pointer; }
+.nb-source pre { margin:0; tab-size:4; }
+.nb-outputs { overflow:auto; }
+.nb-output pre { font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere; color:#334155; margin:0; }
+.nb-error { background:#fef2f2; padding:10px; border-radius:4px; }
+.nb-error pre { color:#b91c1c; }
+.nb-note { margin:8px 0; color:#64748b; font-size:12px; }
+.nb-image { display:block; max-width:100%; height:auto; max-height:900px; object-fit:contain; }
+.nb-html-output { overflow:auto; }
+.nb-html-output table { border-collapse:collapse; font-size:13px; text-align:left; }
+.nb-html-output th,.nb-html-output td { padding:6px 12px; border-bottom:1px solid #e2e8f0; }
+.nb-html-output th { background:#f8fafc; }
+:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
+@media(max-width:640px) { .nb-with-contents { grid-template-columns:1fr; }.nb-contents { border-right:0; border-bottom:1px solid #e2e8f0; }.nb-pages { padding:8px; } }
+@media(prefers-reduced-motion:reduce) { * { transition:none!important; scroll-behavior:auto!important; } }

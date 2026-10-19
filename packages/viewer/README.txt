@@ -1,51 +1,64 @@
-Nebula Notebook Viewer 0.1.0
-============================
+Nebula Notebook Viewer 0.2.0
+===========================
 
-A dependency-free browser library for viewing saved nbformat-4 .ipynb files
-from Nebula Notebook or Jupyter. This package is present in the repository;
-it has not been published to an npm registry by this change.
+A read-only browser build from the Nebula source tree. It shares the real
+MarkdownPreview and PythonHighlighter components and cell presentation tokens
+with the application. The package has not been published to an npm registry.
 
-Usage (ES modules)
+Embed with an ES module
 
   import {mountNotebook} from './nebula-viewer/index.js';
-  // Include nebula-viewer/style.css in the host page.
-  const notebook = await response.json();
   const viewer = mountNotebook(container, notebook, {
-    title: 'Processing and quality checks', showCode: true
+    title: 'catalog-audit', filename: 'catalog-audit.ipynb', showCode: true
   });
-  // On unmount: viewer.destroy()
+  // viewer.setShowCode(false); viewer.destroy();
 
-The host owns fetching, downloads, dataset navigation and authorization.
-The viewer itself has no fetch, kernel, filesystem, terminal, LLM, autosave,
-execution or notebook-editing API. Code visibility is ephemeral display state.
-It does not import the full Nebula application or its server-backed services.
+Distribute dist/index.js to the above URL. React and styles are bundled;
+the hosting page does not need React, Tailwind, CodeMirror, or a server.
+Each mount has an isolated shadow root so page styles cannot alter the
+notebook. element.shadowRoot is exposed for integration and accessibility QA.
 
-Supported displays
+Plain script and offline HTML
 
-- Markdown headings, paragraphs, lists, fenced code, inline code, bold and links.
-- Code/raw cells, saved execution counters, stdout/stderr and error outputs.
-- PNG/JPEG MIME outputs, inert HTML tables/text, text/plain and JSON fallbacks.
-- Source strings and source arrays from standard nbformat-4 notebooks.
+  <script src="viewer.global.js"></script>
+  <script>
+    NebulaNotebookViewer.mountNotebook(container, notebook);
+  </script>
 
-Read-only display and executable copies
+Distribute dist/viewer.global.js. Inline that bundle and serialized notebook
+data to create standalone offline HTML; escape less-than characters in
+serialized notebook data. A page containing this viewer can itself be
+embedded with a normal iframe. The viewer uses no cross-frame messaging.
+Host authentication and frame policies must permit the intended audience.
 
-The website shows the saved outputs. To rerun, download the identical .ipynb
-plus its input data, environment information and recipe, then open that copy
-in a local Nebula instance or another compatible Jupyter environment.
-The viewer never executes notebook Python or JavaScript. Rich Nebula/Plotly/
-widget outputs use their saved raster/text fallback; active payloads are not
-evaluated. Publish fallbacks when a notebook needs to be browsable offline.
-HTML is rebuilt from an inert tag allowlist; active content is omitted.
-Long text output is visibly truncated at 100,000 characters; source data is
-preserved in the caller's notebook and in its download.
+Reading behavior
 
-The component is intentionally distinct from the full application's sealed
-notebook mode. It does not claim to verify a seal, execution provenance or
-scientific correctness. Those checks belong in the release and audit bundle.
+Nebula cell headers, syntax colors, Markdown, execution counts, source/output
+folding, a section contents list and a download of the original notebook.
+Supported saved outputs: stdout/stderr, errors, PNG/JPEG, inert HTML tables
+and text/JSON. Unknown metadata and complete output payloads remain in the
+download. Long displayed text is truncated visibly at 100,000 characters.
 
-Validation
+Execution is a separate capability
 
+No kernel, filesystem, terminal, AI service, credentials, autosave or notebook
+editing is imported. The build fails if backend or runtime service modules
+enter the viewer dependency graph. Code cells never execute in this viewer.
+Arbitrary active HTML/JavaScript, live widgets and custom interactive outputs
+are not evaluated; publish saved image/text fallbacks. External Markdown
+images are shown as labels rather than fetched automatically. The full
+application retains its existing Markdown image behavior.
+
+For execution, download the same .ipynb with data/environment/recipe, then
+open a local copy in full Nebula or another compatible Jupyter environment.
+This display component does not verify a provenance seal or scientific QC.
+
+Build and verify from the full Nebula repository
+
+  npm run build --prefix packages/viewer
+  npx tsc -p packages/viewer/tsconfig.json
   npm test --prefix packages/viewer
+  npx vitest run components/__tests__/NotebookViewer.test.tsx components/__tests__/Cell.test.tsx
 
-Tests use a simulated DOM, not browser rendering. They check format validation,
-input preservation, output modes, active-content isolation and teardown.
+Tests use a simulated DOM; real-browser visual checks are separate. Existing
+backend replay/sealing work is outside the viewer package.
