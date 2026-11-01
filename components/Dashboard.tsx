@@ -38,6 +38,7 @@ import { GetStartedCard } from './GetStartedCard';
 import { isAiAutocompleteDecided, setAiAutocomplete, notifySettingsChanged } from '../services/aiAutocompleteService';
 import { fetchEnvironment, type EnvironmentInfo } from '../services/environmentService';
 import { getSettings, saveSettings } from '../services/settingsService';
+import { withBase } from '../lib/basePath';
 
 // Kernel session from API
 interface KernelSession {
@@ -401,7 +402,7 @@ export const Dashboard: React.FC = () => {
   const handleOpenNotebook = (path: string) => {
     const name = stripNotebookExtension(getFilename(path));
     addRecentNotebook(path, name);
-    window.location.href = `/?file=${encodeURIComponent(path)}`;
+    window.location.href = withBase(`/?file=${encodeURIComponent(path)}`);
   };
 
   // Open notebook in new tab
@@ -409,12 +410,12 @@ export const Dashboard: React.FC = () => {
     const name = stripNotebookExtension(getFilename(path));
     addRecentNotebook(path, name);
     setRecentNotebooks(getRecentNotebooks());
-    window.open(`/?file=${encodeURIComponent(path)}`, '_blank');
+    window.open(withBase(`/?file=${encodeURIComponent(path)}`), '_blank');
   };
 
   // Open a terminal
   const handleOpenTerminal = (name: string) => {
-    window.open(`/?terminal=${encodeURIComponent(name)}`, '_blank');
+    window.open(withBase(`/?terminal=${encodeURIComponent(name)}`), '_blank');
   };
 
   // Create new notebook - handled by FileBrowser
@@ -429,7 +430,7 @@ export const Dashboard: React.FC = () => {
       import('../services/fileService').then(({ createNotebook }) => {
         createNotebook(name, [{ id: `cell-${Date.now()}`, type: 'code', content: '', outputs: [], isExecuting: false }], browsedPath || serverCwd)
           .then((notebook) => {
-            const url = `/?file=${encodeURIComponent(notebook.id)}`;
+            const url = withBase(`/?file=${encodeURIComponent(notebook.id)}`);
             if (tab) tab.location.href = url; else window.location.href = url;
             setRefreshCounter(c => c + 1);
           })

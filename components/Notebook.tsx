@@ -66,6 +66,7 @@ import { getNotebookAvatar, updateFavicon, resetFavicon } from '../utils/noteboo
 import { playSuccessSound } from '../utils/notificationSound';
 import { generateCellId } from '../utils/cellId';
 import { reconstructStateAt, HistoryEntry } from '../lib/notebookOperations';
+import { withBase } from '../lib/basePath';
 
 // Initial cell for reset
 const INITIAL_CELL: Cell = {
@@ -4236,7 +4237,7 @@ export const Notebook: React.FC = () => {
             const notebookLabel = currentFilename || 'Untitled';
             const notification = new Notification('Nebula Notebook', {
               body: `${notebookLabel} - ${cellLabel} - completed in ${timeStr}`,
-              icon: '/favicon.svg',
+              icon: withBase('/favicon.svg'),
               tag: 'execution-complete', // Prevents duplicate notifications
               renotify: true,
               requireInteraction: true,
@@ -4429,7 +4430,7 @@ export const Notebook: React.FC = () => {
 
         {imageViewerPath && (
           <ImageModalViewer
-            src={`/api/fs/download?path=${encodeURIComponent(imageViewerPath)}`}
+            src={withBase(`/api/fs/download?path=${encodeURIComponent(imageViewerPath)}`)}
             alt="Preview"
             onClose={() => setImageViewerPath(null)}
           />

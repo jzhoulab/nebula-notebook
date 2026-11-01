@@ -81,6 +81,7 @@ import { hashCellContent } from '../lib/cellHash';
 import { validateMetadataValue, CELL_METADATA_SCHEMA } from '../lib/cellMetadata';
 import { authService } from '../services/authService';
 import { EditSource, UpdateSummary } from './useUndoRedo';
+import { withBase } from '../lib/basePath';
 
 // Operation types (matching backend/MCP types)
 export interface InsertCellOp {
@@ -1111,7 +1112,7 @@ export function useOperationHandler(options: UseOperationHandlerOptions) {
           let popupMessage: string | undefined;
 
           if (result.success) {
-            const newTabUrl = `${window.location.origin}?file=${encodeURIComponent(notebookPath)}`;
+            const newTabUrl = `${window.location.origin}${withBase(`/?file=${encodeURIComponent(notebookPath)}`)}`;
             const popup = window.open(newTabUrl, '_blank');
 
             if (!popup || popup.closed || typeof popup.closed === 'undefined') {

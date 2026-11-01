@@ -15,6 +15,7 @@ import {
   OUTPUT_MIN_HEIGHT_PX,
   OUTPUT_DEFAULT_HEIGHT_PX,
 } from '../config';
+import { withBase } from '../lib/basePath';
 
 // Outputs render on LIGHT backgrounds (white / red-50), but ansi-to-html's
 // default palette targets dark terminals — white (SGR 37) maps to #FFF and is
@@ -293,7 +294,7 @@ const OutputItem: React.FC<{ output: ICellOutput; wrapText: boolean; onOpenImage
   const openHtmlInNewTab = useCallback((html: string) => {
       const encoded = encodeHtmlParam(html);
       if (encoded.length <= MAX_HTML_PARAM_LENGTH) {
-        const url = `${window.location.origin}/?htmlContent=${encoded}`;
+        const url = `${window.location.origin}${withBase(`/?htmlContent=${encoded}`)}`;
         window.open(url, '_blank', 'noopener,noreferrer');
         return;
       }

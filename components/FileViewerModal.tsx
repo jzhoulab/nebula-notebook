@@ -4,6 +4,7 @@ import { ExternalLink, Download, X } from 'lucide-react';
 import { classifyFileView, inlineViewUrl, fileExtension } from '../lib/fileViewer';
 import { detectDelimiter, parseDelimited, inferHeader, CANDIDATE_DELIMITERS } from '../lib/csvTable';
 import { readFile } from '../services/fileService';
+import { withBase } from '../lib/basePath';
 
 interface FileViewerModalProps {
   path: string;
@@ -62,7 +63,7 @@ export const FileViewerModal: React.FC<FileViewerModalProps> = ({ path, name, to
           <ExternalLink className="w-3.5 h-3.5" /> New tab
         </a>
         <a
-          href={`/api/fs/download?path=${encodeURIComponent(path)}${token ? `&token=${encodeURIComponent(token)}` : ''}`}
+          href={withBase(`/api/fs/download?path=${encodeURIComponent(path)}${token ? `&token=${encodeURIComponent(token)}` : ''}`)}
           className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-700 text-slate-200"
           title="Download"
         >

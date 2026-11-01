@@ -1,3 +1,5 @@
+import { withBase } from './basePath';
+
 /**
  * Single source of truth for "how should this file open" — replaces the
  * type checks that were duplicated across FileBrowser and FileListItem.
@@ -63,5 +65,5 @@ export function isEditableTextFile(pathOrName: string): boolean {
 export function inlineViewUrl(path: string, token?: string | null): string {
   const params = new URLSearchParams({ path, inline: '1' });
   if (token) params.set('token', token);
-  return `/api/fs/download?${params.toString()}`;
+  return withBase(`/api/fs/download?${params.toString()}`);
 }

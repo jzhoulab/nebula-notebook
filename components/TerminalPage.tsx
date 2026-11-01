@@ -16,6 +16,7 @@ import {
   checkTerminalServer,
   TerminalInfo,
 } from '../services/terminalService';
+import { withBase } from '../lib/basePath';
 
 interface TerminalPageProps {
   terminalName: string;
@@ -90,7 +91,7 @@ export const TerminalPage: React.FC<TerminalPageProps> = ({ terminalName }) => {
   const handleCreateNew = useCallback(async () => {
     try {
       const t = await createTerminal();
-      window.location.href = `/?terminal=${encodeURIComponent(t.id)}`;
+      window.location.href = withBase(`/?terminal=${encodeURIComponent(t.id)}`);
     } catch (err) {
       console.error('[TerminalPage] Failed to create terminal:', err);
       setError(err instanceof Error ? err.message : 'Failed to create terminal');

@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { decodeHtmlParam, wrapHtmlDocument } from '../utils/htmlPreview';
 import { readFile } from '../services/fileService';
+import { withBase } from '../lib/basePath';
 
 interface HtmlPreviewProps {
   encodedHtml?: string;
@@ -85,7 +86,7 @@ export const HtmlPreview: React.FC<HtmlPreviewProps> = ({ encodedHtml, filePath 
               Open in sandbox
             </button>
             <a
-              href={`/api/fs/download?path=${encodeURIComponent(filePath)}`}
+              href={withBase(`/api/fs/download?path=${encodeURIComponent(filePath)}`)}
               className="px-3 py-1.5 rounded-md bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
             >
               Download instead

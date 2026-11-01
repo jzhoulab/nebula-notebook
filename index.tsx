@@ -1,3 +1,6 @@
+// First: everything after it may call fetch/WebSocket with root-absolute
+// addresses, which must land under the base this Nebula is served at.
+import './lib/basePath';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';

@@ -6,6 +6,9 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      // Relative asset URLs: the same build serves at '/' or under a proxy
+      // prefix (lib/basePath.ts reads the base back from the bundle's URL).
+      base: './',
       server: {
         port: 3000,
         host: '0.0.0.0',
