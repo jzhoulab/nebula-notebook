@@ -347,6 +347,17 @@ Terminals persist as long as the server runs. Bookmark different terminals for q
 - **Auth**: TOTP (otplib), JWT (jsonwebtoken)
 - **Agents**: MCP and the `nebula` CLI (also installable as a Claude Code skill), both in [`nebula-notebook-mcp`](https://www.npmjs.com/package/nebula-notebook-mcp), used by Claude Code, Codex, and other agent CLIs
 
+## Related projects
+
+Built around the same conviction — that humans and agents work best in shared
+spaces:
+
+| Project | What it is |
+|---|---|
+| [nebula-writer](https://github.com/jzthree/nebula-writer) | Local-first, DOCX-compatible writing with AI-assisted revision, in the browser and inside Microsoft Word and Google Docs |
+| [hop](https://github.com/jzthree/hop) | Terminal access for humans and agents: browser terminals plus an MCP server for creating, driving, and auditing agent sessions |
+| [mybot](https://github.com/jzhoulab/mybot) | The connectivity layer for coding agents: every Claude Code and Codex conversation in one searchable local memory, shared across your team |
+
 ## License
 
 MIT
