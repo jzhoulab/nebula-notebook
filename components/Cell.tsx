@@ -3,6 +3,7 @@ import { Cell as ICell, CellType } from '../types';
 import { CellOutput } from './CellOutput';
 import { CodeEditor } from './CodeEditor';
 import { MarkdownPreview } from './MarkdownPreview';
+import { CELL_FRAME, CELL_TOOLBAR, CELL_INDEX } from '../lib/notebookPresentation';
 import { computeLineDiff } from '../lib/diffUtils';
 import { Play, Trash2, ArrowUp, ArrowDown, Bot, Loader2, FileText, Code as CodeIcon, Plus, GripVertical, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import { agentTerminalService, SendResult } from '../services/agentTerminalService';
@@ -644,7 +645,7 @@ const CellComponent: React.FC<Props> = ({
       onDragLeave={onReorder ? handleCellDragLeave : undefined}
       onDrop={onReorder ? handleCellDrop : undefined}
       tabIndex={isActive ? 0 : -1}
-      className={`group relative mb-2 rounded-lg border bg-white shadow-sm transition-all hover:shadow-md ${getBorderClass()} ${isHighlighted ? 'cell-highlight-animation' : ''} ${agentActive ? 'ring-2 ring-purple-300 ring-offset-1' : ''} ${isSelected ? 'ring-2 ring-blue-300 border-blue-300 bg-blue-50/40' : ''} ${isDragging ? 'opacity-50' : ''} ${focusState === 'cell' ? 'outline-none' : ''}`}
+      className={`${CELL_FRAME} ${getBorderClass()} ${isHighlighted ? 'cell-highlight-animation' : ''} ${agentActive ? 'ring-2 ring-purple-300 ring-offset-1' : ''} ${isSelected ? 'ring-2 ring-blue-300 border-blue-300 bg-blue-50/40' : ''} ${isDragging ? 'opacity-50' : ''} ${focusState === 'cell' ? 'outline-none' : ''}`}
       style={dropIndicator ? { boxShadow: dropIndicator === 'above' ? 'inset 0 3px 0 0 #3b82f6' : 'inset 0 -3px 0 0 #3b82f6' } : undefined}
     >
       {/* Sticky toolbar block: pins to the viewport top while any part of
@@ -658,7 +659,7 @@ const CellComponent: React.FC<Props> = ({
       >
       {/* Top Toolbar - click here to enter command mode */}
       <div
-        className={`flex items-center gap-1 px-2 py-1 bg-slate-50 border-b border-slate-100 cursor-pointer ${isToolbarStuck ? '' : 'rounded-t-lg'}`}
+        className={`${CELL_TOOLBAR} cursor-pointer ${isToolbarStuck ? '' : 'rounded-t-lg'}`}
         onClick={handleTopbarClick}
       >
         {/* Left: Cell info, Run button, and action buttons */}
@@ -676,7 +677,7 @@ const CellComponent: React.FC<Props> = ({
               <GripVertical className="w-3.5 h-3.5" />
             </span>
           )}
-          <span className="text-[0.625rem] font-mono font-bold text-slate-400 min-w-[1.5rem]">
+          <span className={CELL_INDEX}>
             #{(cellIndexMapRef.current?.get(cell.id) ?? index) + 1}
           </span>
           {showCellIds && (

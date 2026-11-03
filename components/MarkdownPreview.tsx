@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 
 interface Props {
   content: string;
   placeholder?: string;
+  allowImages?: boolean;
+}
+
+const ImagePolicy = createContext(true);
+function MarkdownImage({src, alt}: {src: string; alt: string}) {
+  const allowImages = useContext(ImagePolicy);
+  return allowImages ? <img src={src} alt={alt} className="my-3 max-h-[32rem] max-w-full rounded-lg border border-slate-200 bg-white object-contain shadow-sm" />
+    : <span className="text-slate-500">[Image: {alt || 'external image'}]</span>;
 }
 
 const SAFE_URL_PATTERN = /^(https?:|mailto:|\/|#)/i;
@@ -60,11 +68,10 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       const safeUrl = sanitizeUrl(secondGroup);
       if (safeUrl) {
         nodes.push(
-          <img
+          <MarkdownImage
             key={key}
             src={safeUrl}
             alt={firstGroup}
-            className="my-3 max-h-[32rem] max-w-full rounded-lg border border-slate-200 bg-white object-contain shadow-sm"
           />,
         );
       } else {
@@ -300,11 +307,11 @@ function renderBlocks(content: string, keyPrefix: string): React.ReactElement[] 
   return elements;
 }
 
-export const MarkdownPreview: React.FC<Props> = ({ content, placeholder = '## Markdown Title' }) => {
+export const MarkdownPreview: React.FC<Props> = ({ content, placeholder = '## Markdown Title', allowImages = true }) => {
   const trimmed = content.trim();
 
   return (
-    <div className="px-3 py-2 select-text">
+    <ImagePolicy.Provider value={allowImages}><div className="px-3 py-2 select-text">
       {trimmed ? (
         <div className="[overflow-wrap:anywhere]">
           {renderBlocks(content, 'markdown')}
@@ -312,6 +319,6 @@ export const MarkdownPreview: React.FC<Props> = ({ content, placeholder = '## Ma
       ) : (
         <p className="min-h-[1.5rem] text-sm italic text-slate-400">{placeholder}</p>
       )}
-    </div>
+    </div></ImagePolicy.Provider>
   );
 };

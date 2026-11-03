@@ -1,0 +1,35 @@
+@import "tailwindcss" source(none);
+@source "./NotebookViewer.tsx";
+@source "../../../components/MarkdownPreview.tsx";
+@source "../../../components/PythonHighlighter.tsx";
+@source "../../../lib/notebookPresentation.ts";
+
+/* 14.4px is the app's root size (16px * --ui-scale 0.9); shadow-css.mjs resolves every rem against it. */
+:host { display:block; color:#0f172a; font-family:ui-sans-serif,system-ui,sans-serif; font-size:14.4px; line-height:1.5; text-align:left; }
+.nebula-viewer { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+.nb-reading-layout { display:grid; min-width:0; }
+.nb-with-contents { grid-template-columns:190px minmax(0,1fr); }
+.nb-pages { padding-top:14.4px; padding-bottom:14.4px; }
+.nb-cell { scroll-margin-top:14.4px; overflow:hidden; }
+.nb-contents { padding:14.4px 7.2px; border-right:1px solid #e2e8f0; }
+.nb-section-link { display:block; width:100%; padding:7.2px; text-align:left; border-radius:4px; overflow-wrap:anywhere; cursor:pointer; color:#475569; }
+.nb-section-link:hover { background:#e2e8f0; color:#1e293b; }
+.nb-button { cursor:pointer; }
+/* CodeMirror's metrics: line-height 1.4, wrapping at any character. */
+.nb-source pre { margin:0; tab-size:4; line-height:1.4; word-break:break-all; }
+.nb-outputs { overflow:auto; }
+.nb-output { margin-bottom:3.6px; }
+.nb-output pre { font:12.6px/18px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:break-word; color:#334155; margin:0; }
+.nb-stderr { background:#fef2f2; padding:7.2px; border-radius:4px; }
+.nb-stderr pre { color:#dc2626; }
+.nb-error { background:#fee2e2; border-left:4px solid #ef4444; padding:7.2px; margin-bottom:7.2px; border-radius:0 4px 4px 0; }
+.nb-error pre { color:#b91c1c; }
+.nb-note { margin:7.2px 0; color:#64748b; font-size:10.8px; }
+.nb-image { display:block; max-width:100%; height:auto; max-height:900px; object-fit:contain; margin:14.4px 0; background:#fff; border:1px solid #e2e8f0; border-radius:4px; box-shadow:0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1); }
+.nb-html-output { overflow:auto; margin:7.2px 0; }
+.nb-html-output table { border-collapse:collapse; font-size:12.24px; text-align:left; }
+.nb-html-output th,.nb-html-output td { padding:7.2px; border-bottom:1px solid #e2e8f0; color:#334155; }
+.nb-html-output th { background:#f8fafc; color:#475569; font-weight:600; }
+:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
+@media(max-width:640px) { .nb-with-contents { grid-template-columns:1fr; }.nb-contents { border-right:0; border-bottom:1px solid #e2e8f0; } }
+@media(prefers-reduced-motion:reduce) { * { transition:none!important; scroll-behavior:auto!important; } }

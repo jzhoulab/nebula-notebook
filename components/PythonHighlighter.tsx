@@ -6,7 +6,7 @@ import React, { useMemo } from 'react';
  */
 
 interface Token {
-  type: 'keyword' | 'builtin' | 'string' | 'comment' | 'number' | 'operator' | 'decorator' | 'text';
+  type: 'keyword' | 'atom' | 'definition' | 'className' | 'string' | 'comment' | 'number' | 'decorator' | 'text';
   value: string;
 }
 
@@ -14,26 +14,17 @@ const KEYWORDS = new Set([
   'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
   'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from',
   'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not',
-  'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
-  'True', 'False', 'None'
+  'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'
 ]);
 
-const BUILTINS = new Set([
-  'print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set',
-  'tuple', 'bool', 'type', 'isinstance', 'hasattr', 'getattr', 'setattr',
-  'open', 'input', 'abs', 'all', 'any', 'bin', 'chr', 'dir', 'divmod',
-  'enumerate', 'eval', 'exec', 'filter', 'format', 'frozenset', 'globals',
-  'hash', 'help', 'hex', 'id', 'iter', 'locals', 'map', 'max', 'min',
-  'next', 'object', 'oct', 'ord', 'pow', 'repr', 'reversed', 'round',
-  'slice', 'sorted', 'sum', 'super', 'vars', 'zip', '__import__',
-  'Exception', 'ValueError', 'TypeError', 'KeyError', 'IndexError',
-  'AttributeError', 'ImportError', 'RuntimeError', 'StopIteration'
-]);
+const ATOMS = new Set(['True', 'False', 'None']);
+
 
 // Tokenize Python code - simple regex-based approach
 function tokenize(code: string): Token[] {
   const tokens: Token[] = [];
   let remaining = code;
+  let afterKeyword = '';
 
   while (remaining.length > 0) {
     let matched = false;
@@ -88,11 +79,16 @@ function tokenize(code: string): Token[] {
     if (wordMatch) {
       const word = wordMatch[0];
       let type: Token['type'] = 'text';
-      if (KEYWORDS.has(word)) {
+      if (afterKeyword === 'def') {
+        type = 'definition';
+      } else if (afterKeyword === 'class') {
+        type = 'className';
+      } else if (KEYWORDS.has(word)) {
         type = 'keyword';
-      } else if (BUILTINS.has(word)) {
-        type = 'builtin';
+      } else if (ATOMS.has(word)) {
+        type = 'atom';
       }
+      afterKeyword = word;
       tokens.push({ type, value: word });
       remaining = remaining.slice(word.length);
       matched = true;
@@ -102,7 +98,7 @@ function tokenize(code: string): Token[] {
     // Operators
     const operatorMatch = remaining.match(/^[+\-*/%=<>!&|^~:]+/);
     if (operatorMatch) {
-      tokens.push({ type: 'operator', value: operatorMatch[0] });
+      tokens.push({ type: 'text', value: operatorMatch[0] });
       remaining = remaining.slice(operatorMatch[0].length);
       matched = true;
       continue;
@@ -118,15 +114,17 @@ function tokenize(code: string): Token[] {
   return tokens;
 }
 
+// What the notebook editor actually paints: CodeMirror's defaultHighlightStyle.
 const TOKEN_STYLES: Record<Token['type'], string> = {
-  keyword: 'text-purple-600 font-medium',
-  builtin: 'text-blue-600',
-  string: 'text-green-600',
-  comment: 'text-slate-400 italic',
-  number: 'text-orange-500',
-  operator: 'text-slate-600',
-  decorator: 'text-amber-600',
-  text: 'text-slate-800'
+  keyword: 'text-[#708]',
+  atom: 'text-[#219]',
+  definition: 'text-[#00f]',
+  className: 'text-[#167]',
+  string: 'text-[#a11]',
+  comment: 'text-[#940]',
+  number: 'text-[#164]',
+  decorator: 'text-[#404740]',
+  text: ''
 };
 
 interface Props {

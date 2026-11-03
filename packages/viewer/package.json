@@ -1,0 +1,33 @@
+{
+  "name": "@nebula-notebook/viewer",
+  "version": "0.2.0",
+  "description": "Embeddable read-only build sharing Nebula notebook presentation",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js"
+    },
+    "./style.css": "./style.css"
+  },
+  "files": [
+    "dist",
+    "index.js",
+    "index.d.ts",
+    "style.css",
+    "README.txt",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "vite build --config vite.config.ts",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^27.3.0"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
