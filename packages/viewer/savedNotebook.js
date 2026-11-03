@@ -34,8 +34,8 @@ function element(doc, tag, className, text) {
   return e;
 }
 
-function textOutput(doc, text, error = false) {
-  const box = element(doc, 'div', 'nb-output' + (error ? ' nb-error' : ''));
+function textOutput(doc, text, kind = '') {
+  const box = element(doc, 'div', 'nb-output' + (kind ? ` nb-${kind}` : ''));
   // ANSI control codes are presentation only; never interpreted as terminal commands.
   const clean = text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '');
   box.append(element(doc, 'pre', '', clean.slice(0, MAX_TEXT)));
@@ -65,8 +65,8 @@ function safeHtml(doc, source) {
 }
 
 export function renderOutput(doc, output) {
-  if (output.output_type === 'stream') return textOutput(doc, join(output.text ?? ''), output.name === 'stderr');
-  if (output.output_type === 'error') return textOutput(doc, output.traceback?.length ? join(output.traceback.map(x => x + '\n')) : `${output.ename || 'Error'}: ${output.evalue || ''}`, true);
+  if (output.output_type === 'stream') return textOutput(doc, join(output.text ?? ''), output.name === 'stderr' ? 'stderr' : '');
+  if (output.output_type === 'error') return textOutput(doc, output.traceback?.length ? join(output.traceback.map(x => x + '\n')) : `${output.ename || 'Error'}: ${output.evalue || ''}`, 'error');
   const data = output.data || {};
   for (const mime of ['image/png', 'image/jpeg']) if (data[mime]) {
     const value = join(data[mime]).replace(/\s/g, '');

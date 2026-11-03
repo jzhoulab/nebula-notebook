@@ -14,12 +14,45 @@ describe('Nebula embeddable reading view', () => {
     const {container}=render(<NotebookViewer notebook={notebook()} />);
     expect(screen.getByRole('heading',{name:'Evidence',level:1})).toBeInTheDocument();
     expect(container.querySelector('em')?.textContent).toBe('context');
-    expect(container.querySelector('.text-blue-600')?.textContent).toBe('print');
-    expect(container.querySelector('.text-orange-500')?.textContent).toBe('42');
+    expect(container.querySelector('[class~="text-[#164]"]')?.textContent).toBe('42');
     expect(screen.getByText('Not executed')).toBeInTheDocument();
     expect(screen.getByText('ValueError: bad key')).toBeInTheDocument();
     expect(container.querySelector('textarea,[contenteditable="true"],img[src^="https:"]')).toBeNull();
     expect(screen.queryByRole('button',{name:/Run cell|Save notebook/i})).not.toBeInTheDocument();
+  });
+  it('colors Python the way the notebook editor renders it', () => {
+    const n=notebook();n.cells[1].source='@wrap\ndef f(x):\n    return None # done\nclass K: pass\nprint("s", 1)';n.cells.pop();
+    const {container}=render(<NotebookViewer notebook={n} />);
+    const text=(color:string)=>[...container.querySelectorAll(`[class~="text-[${color}]"]`)].map(e=>e.textContent);
+    expect(text('#708')).toEqual(['def','return','class','pass']);
+    expect(text('#00f')).toEqual(['f']);
+    expect(text('#167')).toEqual(['K']);
+    expect(text('#219')).toEqual(['None']);
+    expect(text('#940')).toEqual(['# done']);
+    expect(text('#a11')).toEqual(['"s"']);
+    expect(text('#164')).toEqual(['1']);
+    expect(text('#404740')).toEqual(['@wrap']);
+  });
+  it('uses the notebook cell chrome: type pill, error border and output area', () => {
+    const {container}=render(<NotebookViewer notebook={notebook()} />);
+    const cells=container.querySelectorAll('[data-cell-index]');
+    expect(cells[1].className).toContain('hover:border-slate-300');
+    expect(cells[2].className).toContain('border-red-200');
+    expect(screen.getAllByText('Code')[0].className).toContain('shadow-sm');
+    expect(screen.queryByText('Saved output')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Saved outputs for cell 2').className).toContain('p-4');
+    expect(screen.getByLabelText('Saved outputs for cell 2').parentElement?.className).toContain('border-t');
+  });
+  it('bounds collapsed outputs in the notebook gutter style rather than removing them', () => {
+    const n=notebook();(n.cells[1].metadata as any).scrolled=true;
+    render(<NotebookViewer notebook={n} />);
+    const toggle=screen.getByRole('button',{name:'Expand saved output for cell 2'});
+    expect(toggle.className).toContain('w-6');
+    expect(screen.getByLabelText('Saved outputs for cell 2').style.maxHeight).not.toBe('');
+    expect(screen.getByText('42',{selector:'pre'})).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByLabelText('Saved outputs for cell 2').style.maxHeight).toBe('');
+    expect(screen.getByRole('button',{name:'Collapse saved output for cell 2'})).toHaveAttribute('aria-expanded','true');
   });
   it('hides and restores sources without changing the notebook or losing outputs', () => {
     const n=notebook(),before=JSON.stringify(n);

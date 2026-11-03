@@ -66,8 +66,28 @@ test('an explicit visibility call restores code after a reader toggles it off',(
 });
 test('the embed contains its styles and does not inject host styles or backend resources',()=>{
   const {dom,el}=env();const viewer=mountNotebook(el,notebook());
-  assert.ok(viewer.element.shadowRoot.querySelector('style').textContent.includes('.text-purple-600'));
+  assert.ok(viewer.element.shadowRoot.querySelector('style').textContent.includes('#708'));
   assert.equal(dom.window.document.querySelectorAll('style,link,script,iframe').length,0);
   assert.equal(root(el).querySelectorAll('script,iframe').length,0);
   viewer.destroy();dom.window.close();
+});
+
+const embedCss=()=>{const {dom,el}=env();const viewer=mountNotebook(el,notebook());const css=viewer.element.shadowRoot.querySelector('style').textContent;viewer.destroy();dom.window.close();return css;};
+test('borders and shadows survive the shadow root, which ignores @property registrations',()=>{
+  const css=embedCss();
+  // .border is `border-style:var(--tw-border-style)`: without a real declaration it computes to none.
+  const names=[...css.matchAll(/@property (--tw-[\w-]+)\{[^}]*initial-value:/g)].map(m=>m[1]);
+  assert.ok(names.includes('--tw-border-style'));
+  const fallback=/@layer properties\{[^{}]*:host[^{}]*\{([^}]*)\}/.exec(css);
+  assert.ok(fallback,'expected a :host fallback rule inside @layer properties');
+  for(const name of names) assert.ok(fallback[1].includes(name+':'),name+' has no shadow-root fallback');
+});
+test('sizes match the app at its 0.9 UI scale and ignore the host page root font size',()=>{
+  const css=embedCss();
+  assert.equal(/:[^;{}]*\d\.?\d*rem\b/.test(css.replace(/@(media|container)[^{]*\{/g,'')),false,'rem would follow the host page');
+  assert.match(css,/--text-sm:12\.6px/);assert.match(css,/--spacing:3\.6px/);assert.match(css,/:host\{[^}]*font-size:14\.4px/);
+});
+test('stderr and tracebacks use distinct Nebula output treatments',()=>{
+  const {dom,el}=env();const n=notebook();n.cells[1].outputs=[{output_type:'stream',name:'stderr',text:'warn'},{output_type:'error',ename:'E',evalue:'x',traceback:['\u001b[0;31mE\u001b[0m: x']}];
+  mountNotebook(el,n);assert.equal(root(el).querySelector('.nb-stderr pre').textContent,'warn');assert.equal(root(el).querySelector('.nb-error pre').textContent.trim(),'E: x');dom.window.close();
 });
